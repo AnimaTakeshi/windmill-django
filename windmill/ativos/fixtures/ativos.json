@@ -1,0 +1,29 @@
+[
+  {
+    "model": "ativos.moeda",
+    "pk":1,
+    "fields":{
+      "nome":"Real",
+      "codigo":"BRL"
+    }
+
+  },
+  {
+    "model":"ativos.pais",
+    "pk":1,
+    "fields":{
+      "nome":"Brasil",
+      "moeda":"1"
+    }
+  },
+  {
+    "model": "ativos.ativo",
+    "pk":1,
+    "fields":{
+      "nome":"ABEV3",
+      "bbg_ticker":"ABEV3 BZ EQUITY",
+      "tipo_ativo":"RV",
+      "pais":"1"
+    }
+  }
+]
