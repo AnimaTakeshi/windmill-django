@@ -1,1 +1,1 @@
-web: gunicorn windmill/windmill.wsgi
+web: sh -c 'cd windmill && gunicorn django.wsgi:application'
