@@ -10,6 +10,8 @@ pandas = "*"
 sqlalchemy = "*"
 tox = "*"
 django-extensions = "*"
+django-heroku = "*"
+dj-database-url = "*"
 
 [dev-packages]
 coverage = "*"

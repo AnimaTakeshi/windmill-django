@@ -12,6 +12,9 @@ https://docs.djangoproject.com/en/2.1/ref/settings/
 
 import os
 
+import django_heroku
+import dj_database_url
+
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -20,7 +23,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # See https://docs.djangoproject.com/en/2.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'j01qq#amip(f7)b^%di6w8@k=w25uq*^-_4w8j_v_)zx=ly+0!'
+SECRET_KEY = os.environ['SECRET_KEY']
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -75,16 +78,7 @@ WSGI_APPLICATION = 'windmill.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/2.1/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'test_windmill',
-        'USER': os.environ['RDS_USERNAME'],
-        'PASSWORD': os.environ['RDS_PASSWORD'],
-        'HOST': os.environ['RDS_HOSTNAME'],
-        'PORT': os.environ['RDS_PORT'],
-    }
-}
+DATABASES['default'] = dj_database_url.config(default=os.environ['DATABASE_URL'])
 
 
 # Password validation
@@ -124,3 +118,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/2.1/howto/static-files/
 
 STATIC_URL = '/static/'
+
+
+# Activating django-heroku
+django_heroku.settings(locals())
