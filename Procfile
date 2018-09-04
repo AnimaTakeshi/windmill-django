@@ -1,1 +1,1 @@
-web: gunicorn windmill.wsgi
+web: gunicorn django.core.wsgi
