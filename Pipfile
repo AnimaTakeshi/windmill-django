@@ -12,6 +12,7 @@ tox = "*"
 django-extensions = "*"
 django-heroku = "*"
 dj-database-url = "*"
+gunicorn = "*"
 
 [dev-packages]
 coverage = "*"
