@@ -1,1 +1,1 @@
-web: gunicorn ./windmill/windmill.wsgi
+web: gunicorn windmill/windmill.wsgi
