@@ -79,12 +79,8 @@ WSGI_APPLICATION = 'windmill.wsgi.application'
 # https://docs.djangoproject.com/en/2.1/ref/settings/#databases
 
 DATABASES = {
-    'default':{
-        'ENGINE':'django.db.backends.postgresql_psycopg2'
-    }
+    'default':dj_database_url.config(default=os.environ['DATABASE_URL'])
 }
-
-DATABASES['default'] = dj_database_url.config(default=os.environ['DATABASE_URL'])
 
 
 # Password validation
