@@ -78,6 +78,12 @@ WSGI_APPLICATION = 'windmill.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/2.1/ref/settings/#databases
 
+DATABASES = {
+    'default':{
+        'ENGINE':'django.db.backends.postgresql_psycopg2'
+    }
+}
+
 DATABASES['default'] = dj_database_url.config(default=os.environ['DATABASE_URL'])
 
 
