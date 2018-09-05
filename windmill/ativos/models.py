@@ -23,13 +23,22 @@ class Ativo(models.Model):
         abstract = True
         ordering = ['nome']
 
+    def __str__(self):
+        return '%s' % (self.nome)
+
 class Pais(models.Model):
     nome = models.CharField(max_length=20, unique=True)
     moeda = models.ForeignKey('Moeda', on_delete=models.PROTECT)
 
+    def __str__(self):
+        return '%s' % (self.nome)
+
 class Moeda(models.Model):
     nome = models.CharField(max_length=15, unique=True)
     codigo = models.CharField(max_length=3, unique=True)
+
+    def __str__(self):
+        return '%s' % (self.nome)
 
 class Renda_Fixa(Ativo):
     vencimento = models.DateField(default=datetime.date.max)
