@@ -50,4 +50,4 @@ class Acao(Ativo):
     tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, null=True)
 
     def get_absolute_url(self):
-        return reverse('ativos:lista_acao')
+        return reverse('ativos:detalhe_acao', args=[str(self.id)])

@@ -27,5 +27,5 @@ class AtivosPageTest(TestCase):
         self.assertIn('<h1>Cadastro de ações</h1>', html)
 
     def test_url_lista_acao_resolves(self):
-        response= = self.client.get('/ativos/lista-acoes/')
+        response= = self.client.get('/ativos/acoes/lista')
         self.assertEqual(response.status_code, 200)

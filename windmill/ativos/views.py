@@ -1,6 +1,7 @@
 from django.shortcuts import render, get_object_or_404
 from django.http import HttpResponse
-from django.views.generic import TemplateView, ListView, CreateView
+from django.views.generic import DetailView, ListView
+from django.views.generic.edit import CreateView, UpdateView
 
 from .models import Acao
 
@@ -21,3 +22,12 @@ class CadastroAcaoView(CreateView):
 class AcoesView(ListView):
     model = Acao
     template_name ='acoes/lista.html'
+
+class AcaoEditarView(UpdateView):
+    model = Acao
+    template_name = 'acoes/editar.html'
+    fields = "__all__"
+
+class AcaoDetalheView(DetailView):
+    model = Acao
+    template_name = 'acoes/detalhe.html'

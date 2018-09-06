@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h3>Ação</h3>
+<div class="registro-acao">
+  <p>Nome: {{ object.nome }}</p>
+  <p>Ticker Bloomberg: {{ object.bbg_ticker }}</p>
+  <p>País: {{ object.pais }}</p>
+  <p>Tipo: {{ object.tipo }}</p>
+</div>
+
+<a href="{% url 'ativos:editar_acao' acao.pk %}">+ Editar ação</a>
+
+{% endblock %}
