@@ -21,7 +21,7 @@ class Ativo(models.Model):
 
     nome = models.CharField(max_length=25, unique=True)
     bbg_ticker = models.CharField(max_length=25, unique=True, null=True)
-    pais = models.ForeignKey(Pais, on_delete=models.PROTECT, null=True)
+    pais = models.ForeignKey(Pais, on_delete=models.PROTECT, null=True, blank=True)
 
     class Meta:
         ordering = ['nome']
