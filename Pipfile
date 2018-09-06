@@ -16,6 +16,7 @@ gunicorn = "*"
 
 [dev-packages]
 coverage = "*"
+selenium = "*"
 
 [requires]
 python_version = "3.6"

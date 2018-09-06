@@ -2,37 +2,6 @@ import datetime
 from django.db import models
 
 # Create your models here.
-class Ativo(models.Model):
-
-    TIPOS_DE_ATIVOS = (
-        ('RV', 'Ações'),
-        ('RF', 'Renda Fixa'),
-        ('RE', 'Real Estate'),
-        ('FRV', 'Fundo de Renda Variável'),
-        ('FRF', 'Fundo de Renda Fixa'),
-        ('FII', 'Fundo Imobiliário'),
-    )
-
-    nome = models.CharField(max_length=25, unique=True)
-    bbg_ticker = models.CharField(max_length=25, unique=True)
-    tipo_ativo = models.CharField(max_length=5, choices=TIPOS_DE_ATIVOS,
-    default='RV')
-    pais = models.ForeignKey('Pais', on_delete=models.PROTECT)
-
-    class Meta:
-        abstract = True
-        ordering = ['nome']
-
-    def __str__(self):
-        return '%s' % (self.nome)
-
-class Pais(models.Model):
-    nome = models.CharField(max_length=20, unique=True)
-    moeda = models.ForeignKey('Moeda', on_delete=models.PROTECT)
-
-    def __str__(self):
-        return '%s' % (self.nome)
-
 class Moeda(models.Model):
     nome = models.CharField(max_length=15, unique=True)
     codigo = models.CharField(max_length=3, unique=True)
@@ -40,5 +9,41 @@ class Moeda(models.Model):
     def __str__(self):
         return '%s' % (self.nome)
 
+class Pais(models.Model):
+    nome = models.CharField(max_length=20, unique=True)
+    moeda = models.ForeignKey(Moeda, on_delete=models.PROTECT)
+
+    def __str__(self):
+        return '%s' % (self.nome)
+
+class Ativo(models.Model):
+
+    nome = models.CharField(max_length=25, unique=True)
+    bbg_ticker = models.CharField(max_length=25, unique=True, null=True)
+    pais = models.ForeignKey(Pais, on_delete=models.PROTECT, null=True)
+
+    class Meta:
+        ordering = ['nome']
+
+    def __str__(self):
+        return '%s' % (self.nome)
+
 class Renda_Fixa(Ativo):
+    TIPO_INFO_CHOICES = (
+        ("PU", "PU"),
+        ("YLD", "Yield")
+    )
     vencimento = models.DateField(default=datetime.date.max)
+    cupom = models.DecimalField(max_digits=7, decimal_places=5, null=True,
+        default=0)
+    info = models.CharField("informacao de mercado", max_length=3,
+        choices=TIPO_INFO_CHOICES, default="PU")
+    periodo = models.IntegerField("periodicidade do cupom", default=0)
+
+class Acao(Ativo):
+    TIPO_CHOICES=(
+        ("PN", "Preferencial"),
+        ("ON", "Ordinária")
+    )
+
+    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, null=True)
