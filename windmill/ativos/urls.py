@@ -6,5 +6,5 @@ app_name='ativos'
 
 urlpatterns = [
     path('', views.ativos_home, name='ativos_home'),
-    path('acoes/', views.CadastroView.as_view(), name='cadastro')
+    path('acoes/', views.CadastroView.as_view(), name='cadastro_acao')
 ]

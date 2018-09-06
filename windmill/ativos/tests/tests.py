@@ -24,4 +24,4 @@ class AtivosPageTest(TestCase):
     def test_cadastro_url_returns_correct_html(self):
         response = self.client.get('/ativos/acoes/')
         html = response.content.decode('utf8')
-        self.assertIn('<h1>Cadastro de ativos</h1>', html)
+        self.assertIn('<h1>Cadastro de ações</h1>', html)
