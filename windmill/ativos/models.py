@@ -1,5 +1,6 @@
 import datetime
 from django.db import models
+from django.urls import reverse
 
 # Create your models here.
 class Moeda(models.Model):
@@ -47,3 +48,6 @@ class Acao(Ativo):
     )
 
     tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, null=True)
+
+    def get_absolute_url(self):
+        return reverse('ativos:lista_acao')

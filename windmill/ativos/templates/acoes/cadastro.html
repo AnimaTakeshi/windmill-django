@@ -1,11 +1,12 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<h1>Cadastro de ações</h1>
+<h2>Cadastro de ações</h2>
 
-<ul>
-  {% for acao in object_list %}
-  <li>{{ acao }}</li>
-  {% endfor %}
-</ul>
+<form action="" method="post"> {% csrf_token %}
+
+  {{ form.as_p }}
+
+  <input type="submit" name="" value="Salvar"/>
+</form>
 {% endblock %}
