@@ -41,7 +41,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'ativos'
+    'widget_tweaks',
+    'ativos',
 ]
 
 MIDDLEWARE = [
@@ -121,6 +122,7 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 
+IMPORT_EXPORT_USE_TRANSACTIONS = True
 
 # Activating django-heroku
 django_heroku.settings(locals())

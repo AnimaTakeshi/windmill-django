@@ -4,7 +4,7 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-django = "*"
+django = "==2.1"
 pandas = "*"
 "psycopg2" = "*"
 sqlalchemy = "*"
@@ -13,6 +13,8 @@ django-extensions = "*"
 django-heroku = "*"
 dj-database-url = "*"
 gunicorn = "*"
+django-widget-tweaks = "*"
+django-import-export = "*"
 
 [dev-packages]
 coverage = "*"

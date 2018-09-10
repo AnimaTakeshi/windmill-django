@@ -1,11 +1,60 @@
 {% extends 'base.html' %}
+{% load widget_tweaks %}
+
 
 {% block content %}
 <h2>Cadastro de ações</h2>
+<div class="d-flex p-2">
+  <form action="" method="post">
+    {% for hidden_field in form.hidden_fields %}
+      {{ hidden_field }}
+    {% endfor %}
 
-<form action="" method="post">
-  {% csrf_token %}
-  {{ form.as_p }}
-  <input type="submit" name="" value="Salvar"/>
-</form>
+    {% if form.non_field_errors %}
+      <div class="alert alert-danger" role="alert">
+        {% for error in form.non_field_errors %}
+          {{ error }}
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% for field in form.visible_fields %}
+      <div class="form-group">
+        {{ field.label_tag }}
+
+        {% if form.is_bound %}
+          {% if field.errors %}
+            {% render_field field class="form-control is-invalid" %}
+            {% for error in field.errors %}
+              <div class="invalid-feedback">
+                {{ error }}
+              </div>
+            {% endfor %}
+          {% else %}
+            {% render_field field class="form-control is-valid" %}
+          {% endif %}
+        {% else %}
+          {% render_field field class="form-control" %}
+        {% endif %}
+
+        {% if field.help_text %}
+          <small class="form-text text-muted">{{ field.help_text }}</small>
+        {% endif %}
+      </div>
+    {% endfor %}
+
+    <button type="submit" class="btn btn-primary">Enviar</button>
+  </form>
+</div>
+<div>
+  <form method="post" enctype="multipart/form-data">
+    <div class="form-group">
+      {% csrf_token %}
+      <p class="h4">Cadastrar ações por arquivo .csv</p>
+      <input type="file" name="Importar .csv" class="form-control">
+      <button type="submit" class="btn btn-primary">Upload</button>
+    </div>
+
+  </form>
+</div>
 {% endblock %}

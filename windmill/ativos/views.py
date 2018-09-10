@@ -1,9 +1,10 @@
 from django.shortcuts import render, get_object_or_404
 from django.http import HttpResponse
 from django.views.generic import DetailView, ListView
-from django.views.generic.edit import CreateView, UpdateView
+from django.views.generic.edit import CreateView, UpdateView, FormView
 
 from .models import Acao
+from .forms import AcaoForm, AcaoCSVForm
 
 def ativos_home(request):
     return HttpResponse('<html><title>Cadastro de ativos</title></html>')
@@ -14,8 +15,8 @@ def acoes(request):
         'acoes/cadastro.html',
         {'acoes':acoes})
 
-class CadastroAcaoView(CreateView):
-    model = Acao
+class CadastroAcaoView(FormView):
+    form_class = AcaoForm
     template_name = 'acoes/cadastro.html'
     fields = '__all__'
 
@@ -31,3 +32,8 @@ class AcaoEditarView(UpdateView):
 class AcaoDetalheView(DetailView):
     model = Acao
     template_name = 'acoes/detalhe.html'
+
+class UploadCSVAcaoView(FormView):
+    form_class = AcaoCSVForm
+    template_name = 'acoes/cadastro.html'
+    fields = '__all__'
