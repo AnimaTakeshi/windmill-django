@@ -15,6 +15,7 @@ dj-database-url = "*"
 gunicorn = "*"
 django-widget-tweaks = "*"
 django-import-export = "*"
+django-polymorphic = "*"
 
 [dev-packages]
 coverage = "*"

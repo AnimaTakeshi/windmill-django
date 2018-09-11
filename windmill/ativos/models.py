@@ -26,7 +26,7 @@ class Pais(models.Model):
 class Ativo(models.Model):
 
     nome = models.CharField(max_length=25, unique=True)
-    bbg_ticker = models.CharField(max_length=25, unique=True, null=True, blank=True)
+    bbg_ticker = models.CharField(max_length=25, unique=True, blank=True)
     pais = models.ForeignKey(Pais, on_delete=models.PROTECT, null=True, blank=True)
 
     class Meta:
@@ -64,3 +64,12 @@ class Acao(Ativo):
 
     def get_absolute_url(self):
         return reverse('ativos:detalhe_acao', args=[str(self.id)])
+
+class Cambio(Ativo):
+
+    moeda_origem = models.ForeignKey(Moeda, on_delete=models.PROTECT,
+        null=False, blank=False, related_name='cambio_moeda_origem')
+    moeda_destino = models.ForeignKey(Moeda, on_delete=models.PROTECT,
+        null=False, blank=False, related_name='cambio_moeda_destino')
+    class Meta:
+        verbose_name_plural = 'Câmbios'
