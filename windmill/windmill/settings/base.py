@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'import_export',
     'widget_tweaks',
     'ativos',
 ]
@@ -122,6 +123,7 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 
+# Django-import-export settings
 IMPORT_EXPORT_USE_TRANSACTIONS = True
 
 # Activating django-heroku

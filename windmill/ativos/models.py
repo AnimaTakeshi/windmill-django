@@ -7,6 +7,9 @@ class Moeda(models.Model):
     nome = models.CharField(max_length=15, unique=True)
     codigo = models.CharField(max_length=3, unique=True)
 
+    class Meta:
+        verbose_name_plural = 'Moedas'
+
     def __str__(self):
         return '%s' % (self.nome)
 
@@ -17,14 +20,18 @@ class Pais(models.Model):
     def __str__(self):
         return '%s' % (self.nome)
 
+    class Meta:
+        verbose_name_plural = 'Países'
+
 class Ativo(models.Model):
 
     nome = models.CharField(max_length=25, unique=True)
-    bbg_ticker = models.CharField(max_length=25, unique=True, null=True)
+    bbg_ticker = models.CharField(max_length=25, unique=True, null=True, blank=True)
     pais = models.ForeignKey(Pais, on_delete=models.PROTECT, null=True, blank=True)
 
     class Meta:
         ordering = ['nome']
+        verbose_name_plural = 'Ativos'
 
     def __str__(self):
         return '%s' % (self.nome)
@@ -41,6 +48,9 @@ class Renda_Fixa(Ativo):
         choices=TIPO_INFO_CHOICES, default="PU")
     periodo = models.IntegerField("periodicidade do cupom", default=0)
 
+    class Meta:
+        verbose_name_plural = 'Ativos de Renda Fixa'
+
 class Acao(Ativo):
     TIPO_CHOICES=(
         ("PN", "Preferencial"),
@@ -48,6 +58,9 @@ class Acao(Ativo):
     )
 
     tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, null=True)
+
+    class Meta:
+        verbose_name_plural = 'Ações'
 
     def get_absolute_url(self):
         return reverse('ativos:detalhe_acao', args=[str(self.id)])

@@ -21,7 +21,7 @@ class AcaoCSVForm(forms.Form):
 
 def add_related_field_wrapper(form, col_name):
     rel_model = form.Meta.model
-    rel = rel_model._meta.get_field(col_name).rel
+    rel = rel_model._meta.get_field(col_name).remote_field
     form.fields[col_name].widget = RelatedFieldWidgetWrapper(
     form.fields[col_name].widget, rel, admin.site, can_add_related=True,
     can_change_related=False)
