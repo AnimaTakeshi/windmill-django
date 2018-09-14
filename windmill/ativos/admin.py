@@ -6,6 +6,7 @@ from import_export import resources, fields
 from import_export.admin import ImportExportModelAdmin
 from import_export.widgets import ForeignKeyWidget
 from .models import Ativo, Pais, Moeda, Renda_Fixa, Acao, Cambio
+import ativos.forms
 # Register your models here.
 
 admin.site.register(Pais)
@@ -32,7 +33,6 @@ class AcaoAdmin(ImportExportModelAdmin):
     list_filter = ('pais', 'tipo')
     search_fields = ('nome', 'bbg_ticker')
     ordering = ('pais', 'nome')
-
 
 class RendaFixaResource(resources.ModelResource):
     pais = fields.Field(
@@ -107,33 +107,3 @@ class CambioAdmin(ImportExportModelAdmin):
     list_filter = ('pais', 'moeda_origem', 'moeda_destino')
     search_fields = ('nome', 'bbg_ticker', 'moeda_origem', 'moeda_destino')
     ordering = ('pais', 'moeda_origem', 'moeda_destino')
-
-class AtivoResource(resources.ModelResource):
-    pais = fields.Field(
-        column_name='pais',
-        attribute='pais',
-        widget=ForeignKeyWidget(Pais, 'nome')
-    )
-
-    class Meta:
-        model = Ativo
-        fields = (
-            'id',
-            'nome',
-            'bbg_ticker',
-            'pais'
-        )
-
-class CambioInLine(admin.StackedInline):
-    model = Cambio
-
-@admin.register(Ativo)
-class AtivoAdmin(ImportExportModelAdmin):
-    resource_class = AtivoResource
-    list_display = ('nome',
-        'bbg_ticker',
-        'pais')
-    list_filter = ('pais',)
-    search_fields = ('nome', 'bbg_ticker')
-    ordering = ('pais',)
-    inlines = [CambioInLine]

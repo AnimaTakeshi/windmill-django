@@ -11,7 +11,7 @@ class Moeda(models.Model):
         verbose_name_plural = 'Moedas'
 
     def __str__(self):
-        return '%s' % (self.nome)
+        return '%s' % (self.codigo)
 
 class Pais(models.Model):
     nome = models.CharField(max_length=20, unique=True)
@@ -26,7 +26,7 @@ class Pais(models.Model):
 class Ativo(models.Model):
 
     nome = models.CharField(max_length=25, unique=True)
-    bbg_ticker = models.CharField(max_length=25, unique=True, blank=True)
+    bbg_ticker = models.CharField(max_length=25, unique=True, null=True, blank=True, default=None)
     pais = models.ForeignKey(Pais, on_delete=models.PROTECT, null=True, blank=True)
 
     class Meta:
@@ -36,25 +36,30 @@ class Ativo(models.Model):
     def __str__(self):
         return '%s' % (self.nome)
 
+    def save(self, *args, **kwargs):
+        if self.bbg_ticker == '':
+            self.bbg_ticker = None
+        super(Ativo, self).save(*args, **kwargs)
+
 class Renda_Fixa(Ativo):
     TIPO_INFO_CHOICES = (
         ("PU", "PU"),
-        ("YLD", "Yield")
+        ("Yield", "Yield")
     )
     vencimento = models.DateField(default=datetime.date.max)
     cupom = models.DecimalField(max_digits=7, decimal_places=5, null=True,
         default=0)
-    info = models.CharField("informacao de mercado", max_length=3,
+    info = models.CharField("informação de mercado", max_length=3,
         choices=TIPO_INFO_CHOICES, default="PU")
-    periodo = models.IntegerField("periodicidade do cupom", default=0)
+    periodo = models.IntegerField("periodicidade do cupom em meses", default=0)
 
     class Meta:
         verbose_name_plural = 'Ativos de Renda Fixa'
 
 class Acao(Ativo):
     TIPO_CHOICES=(
-        ("PN", "Preferencial"),
-        ("ON", "Ordinária")
+        ("PN", "PN"),
+        ("ON", "ON")
     )
 
     tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, null=True)
@@ -73,3 +78,11 @@ class Cambio(Ativo):
         null=False, blank=False, related_name='cambio_moeda_destino')
     class Meta:
         verbose_name_plural = 'Câmbios'
+
+class Caixa(Ativo):
+
+    zeragem = models.ForeignKey(Ativo, blank=True, null=True,
+        on_delete=models.PROTECT, default=None, related_name='caixas')
+
+    class Meta:
+        verbose_name_plural = "Caixas"

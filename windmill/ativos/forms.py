@@ -2,7 +2,7 @@ from django.forms import ModelForm
 from django import forms
 from django.contrib.admin.widgets import RelatedFieldWidgetWrapper
 from django.contrib import admin
-from .models import Acao, Pais, Moeda
+from .models import Acao, Pais, Moeda, Ativo
 
 
 class AcaoForm(ModelForm):
@@ -25,3 +25,10 @@ def add_related_field_wrapper(form, col_name):
     form.fields[col_name].widget = RelatedFieldWidgetWrapper(
     form.fields[col_name].widget, rel, admin.site, can_add_related=True,
     can_change_related=False)
+
+class AtivoForm(forms.ModelForm):
+    class Meta:
+        model = Ativo
+        fields = "__all__"
+    def clean_bbg_ticker(self):
+        return self.cleaned_data['bbg_ticker'] or None
