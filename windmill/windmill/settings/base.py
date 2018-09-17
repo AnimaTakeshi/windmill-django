@@ -42,9 +42,12 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'phonenumber_field',
     'import_export',
     'widget_tweaks',
     'ativos',
+    'boletagem',
+    'fundo'
 ]
 
 MIDDLEWARE = [
@@ -126,6 +129,9 @@ STATIC_URL = '/static/'
 
 # Django-import-export settings
 IMPORT_EXPORT_USE_TRANSACTIONS = True
+
+# Django-phonenumber field configuration
+PHONENUMBER_DB_FORMAT = 'E164'
 
 # Activating django-heroku
 django_heroku.settings(locals())

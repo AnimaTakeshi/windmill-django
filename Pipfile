@@ -16,6 +16,7 @@ gunicorn = "*"
 django-widget-tweaks = "*"
 django-import-export = "*"
 django-polymorphic = "*"
+django-phonenumber-field = "*"
 
 [dev-packages]
 coverage = "*"
