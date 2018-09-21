@@ -1,3 +1,12 @@
+"""
+Modelos deste app servem para armazenar informações e processar eventos de
+fundos geridos.
+Responsabilidades deste app:
+    - Executar funções relacionadas ao fundo:
+        - Fechamento diário para cálculo de cota.
+        - Fechamento mensal para cálculo de cota.
+"""
+
 from django.db import models
 from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelation
 from django.contrib.contenttypes.models import ContentType
@@ -142,6 +151,19 @@ class Corretora(models.Model):
     def __str__(self):
         return '%s' % (self.nome)
 
+class Custodiante(models.Model):
+    """
+    Descreve quem é a custodiante do fundo/corretora.
+    """
+    nome = models.CharField(max_length=30)
+    contato = GenericRelation('Contato')
+
+    class Meta:
+        ordering = ['nome']
+        verbose_name_plural = 'Custodiantes'
+    def __str__(self):
+        return '%s' % (self.nome)
+
 class Contato(models.Model):
     """
     Modelo para armazenar pontos de contato nas instituições.
@@ -149,10 +171,15 @@ class Contato(models.Model):
     nome = models.CharField(max_length=30)
     telefone = PhoneNumberField()
     email = models.EmailField()
-    area = models.CharField(max_length=20)
+    area = models.CharField(max_length=50)
     observacao = models.TextField()
 
-    content_type = models.ForeignKey(ContentType, on_delete=models.PROTECT)
+    limit = models.Q(app_label='fundo', model='administradora') | \
+        models.Q(app_label='fundo', model='corretora') | \
+        models.Q(app_label='fundo', model='distribuidora') | \
+        models.Q(app_label='fundo', model='gestora')
+    content_type = models.ForeignKey(ContentType, on_delete=models.PROTECT,
+        limit_choices_to=limit)
     object_id = models.PositiveIntegerField()
     content_object = GenericForeignKey('content_type', 'object_id')
 
@@ -162,8 +189,105 @@ class Contato(models.Model):
 
     def __str__(self):
         return '%s' % (self.nome)
-"""
-class Carteira(models.Model):
 
+class Carteira(models.Model):
+    """
     Descreve a carteira de um fundo ao final do dia numa determinada data.
+    """
+    fundo = models.ForeignKey('Fundo', on_delete=models.PROTECT)
+    vertices = models.ManyToManyField('Vertice')
+    data = models.DateField()
+    cota = models.DecimalField(max_digits=15, decimal_places=6)
+
+    class Meta:
+        ordering = ['fundo']
+        verbose_name_plural = 'Carteira'
+
+class Vertice(models.Model):
+    """
+    Um vertice descreve uma relacao entre carteira e ativo, indicando o quanto
+    do ativo a carteira possui, e o quanto do ativo foi movimentado no dia.
+    A quantidade e movimentação são salvos como valores para que a busca no
+    banco de dados seja mais rápida. Uma outra tabela guarda a relação
+    entre os modelos para que seja possível explodir um vértice entre várias
+    quantidades/movimentações feitas.
+    """
+    fundo = models.ForeignKey('Fundo', on_delete=models.PROTECT)
+    ativo = models.ForeignKey('ativos.Ativo', on_delete=models.PROTECT)
+    custodia = models.ForeignKey('Custodiante', on_delete=models.PROTECT)
+    quantidade = models.DecimalField(decimal_places=6, max_digits=20)
+    valor = models.DecimalField(decimal_places=6, max_digits=20)
+    preco = models.DecimalField(decimal_places=6, max_digits=20)
+    movimentacao = models.DecimalField(decimal_places=6, max_digits=20)
+    data = models.DateField()
+
+    class Meta:
+        ordering = ['fundo']
+        verbose_name_plural = 'Vértices'
+
+class Quantidade(models.Model):
+    """
+    Uma quantidade de um objeto é gerada quando o ativo é operado. O ID da
+    operação indica quando a quantidade
+    """
+    # Quantidade do ativo.
+    qtd = models.DecimalField(decimal_places=6, max_digits=20)
+    fundo = models.ForeignKey('Fundo', on_delete=models.PROTECT)
+    data = models.DateField()
+
+    # Content type para servir de ForeignKey de qualquer boleta a ser
+    # inserida no sistema.
+    content_type = models.ForeignKey(ContentType, on_delete=models.PROTECT)
+    object_id = models.PositiveIntegerField()
+    content_object = GenericForeignKey('content_type', 'object_id')
+
+    def __str__(self):
+        return '%s' % (self.content_object.__str__())
+
+
+
+class Movimentacao(models.Model):
+    """
+    Uma movimentação representa a movimentação financeira de algo, ações,
+    caixa, CPR, etc.
+    """
+    # Valor financeiro da movimentação
+    valor = models.DecimalField(decimal_places=6, max_digits=20)
+    fundo = models.ForeignKey('Fundo', on_delete=models.PROTECT)
+    data = models.DateField()
+
+    # Content type para servir de ForeignKey de qualquer boleta a ser
+    # inserida no sistema.
+    content_type = models.ForeignKey(ContentType, on_delete=models.PROTECT)
+    object_id = models.PositiveIntegerField()
+    content_object = GenericForeignKey('content_type', 'object_id')
+
+    def __str__(self):
+        return '%s' % (self.content_object.__str__())
+
+class CasamentoVerticeQuantidade(models.Model):
+    """
+    Relaciona o ID dos Vértices e das Quantidades, para que seja possível
+    explodir um vértice entre todas as quantidades/operações feitas.
+    """
+    vertice = models.ForeignKey('Vertice', on_delete=models.PROTECT)
+    quantidade = models.ForeignKey('Quantidade', on_delete=models.PROTECT)
+
+class CasamentoVerticeMovimentacao(models.Model):
+    """
+    Relaciona o ID de Vértices e Movimentações, para que seja possível
+    explodir um vértice entre todas as movimentações/operações feitas.
+    """
+    vertice = models.ForeignKey('Vertice', on_delete=models.PROTECT)
+    movimentacao = models.ForeignKey('Movimentacao', on_delete=models.PROTECT)
+
+class Cotista(models.Model):
+    """
+    Armazena informações de cotistas dos fundos. Eles podem ser outros
+    fundos ou pessoas.
+    """
+
+class CPR(models.Model):
+    """
+    Armazena informações sobre CPR do fundo.
     """

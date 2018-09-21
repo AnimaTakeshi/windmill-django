@@ -5,16 +5,17 @@ from django import forms
 from import_export import resources, fields
 from import_export.admin import ImportExportModelAdmin
 from import_export.widgets import ForeignKeyWidget
-from .models import Fundo, Administradora, Gestora, Distribuidora, Corretora, Contato
+from django.contrib.contenttypes.admin import GenericTabularInline
+from .models import Fundo, Administradora, Gestora, Distribuidora, Corretora, Contato, Carteira
 from ativos.models import Pais
 import ativos.forms
 
 # Register your models here.
-admin.site.register(Administradora)
 admin.site.register(Gestora)
 admin.site.register(Distribuidora)
 admin.site.register(Corretora)
 admin.site.register(Contato)
+admin.site.register(Carteira)
 
 class FundoResource(resources.ModelResource):
     administradora = fields.Field(
@@ -61,3 +62,12 @@ class FundoAdmin(ImportExportModelAdmin):
     list_filter = ('administradora', 'gestora', 'pais', 'categoria')
     search_fields = ('nome',)
     ordering = ('pais', 'nome')
+
+class ContatoInLine(GenericTabularInline):
+    model = Contato
+
+@admin.register(Administradora)
+class AdministradoraAdmin(ImportExportModelAdmin):
+    inlines = [
+        ContatoInLine,
+    ]

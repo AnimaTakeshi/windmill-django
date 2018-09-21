@@ -21,6 +21,7 @@ django-phonenumber-field = "*"
 [dev-packages]
 coverage = "*"
 selenium = "*"
+jupyter = "*"
 
 [requires]
 python_version = "3.6"

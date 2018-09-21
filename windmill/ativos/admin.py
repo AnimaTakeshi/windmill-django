@@ -5,12 +5,13 @@ from django import forms
 from import_export import resources, fields
 from import_export.admin import ImportExportModelAdmin
 from import_export.widgets import ForeignKeyWidget
-from .models import Ativo, Pais, Moeda, Renda_Fixa, Acao, Cambio
+from .models import Ativo, Pais, Moeda, Renda_Fixa, Acao, Cambio, Caixa
 import ativos.forms
 # Register your models here.
 
 admin.site.register(Pais)
 admin.site.register(Moeda)
+admin.site.register(Caixa)
 admin.site.site_header = "Windmill"
 admin.site.site_title = "Portal Windmill"
 admin.site.index_title = "Portal Windmill - Anima Investimentos"

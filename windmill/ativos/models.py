@@ -1,8 +1,19 @@
+"""
+Modelos deste app servem para armazenar informações que são constantes
+sobre ativos financeiros. Informações de mercado, como preço, volatilidade,
+etc... serão armazenados no app Mercado.
+Responsabilidades deste app:
+    - Armazenamento de informações estáticas sobre ativos do mercado.
+"""
+
 import datetime
 from django.db import models
 from django.urls import reverse
+from django.contrib.contenttypes.fields import GenericRelation
+import fundo.models
 
 # Create your models here.
+
 class Moeda(models.Model):
     nome = models.CharField(max_length=15, unique=True)
     codigo = models.CharField(max_length=3, unique=True)
@@ -28,6 +39,8 @@ class Ativo(models.Model):
     nome = models.CharField(max_length=25, unique=True)
     bbg_ticker = models.CharField(max_length=25, unique=True, null=True, blank=True, default=None)
     pais = models.ForeignKey(Pais, on_delete=models.PROTECT, null=True, blank=True)
+    isin = models.CharField(max_length=25, unique=True, null=True, blank=True)
+    vertice = GenericRelation('fundo.Vertice')
 
     class Meta:
         ordering = ['nome']
@@ -76,13 +89,37 @@ class Cambio(Ativo):
         null=False, blank=False, related_name='cambio_moeda_origem')
     moeda_destino = models.ForeignKey(Moeda, on_delete=models.PROTECT,
         null=False, blank=False, related_name='cambio_moeda_destino')
+
     class Meta:
         verbose_name_plural = 'Câmbios'
 
 class Caixa(Ativo):
 
+    moeda = models.ForeignKey('Moeda', on_delete=models.PROTECT)
     zeragem = models.ForeignKey(Ativo, blank=True, null=True,
         on_delete=models.PROTECT, default=None, related_name='caixas')
 
     class Meta:
         verbose_name_plural = "Caixas"
+
+class Fundo_Local(Ativo):
+
+    CPNJ = models.CharField(max_length=18)
+    data_cotizacao_resgate = models.DateField()
+    data_liquidacao_resgate = models.DateField()
+    data_cotizacao_aplicacao = models.DateField()
+    data_liquidacao_aplicacao = models.DateField()
+    banco = models.CharField(max_length=3, null=True, blank=True)
+    agencia = models.CharField(max_length=6, null=True, blank=True)
+    conta_corrente = models.CharField(max_length=7)
+    digito = models.CharField(max_length=1, null=True, blank=True)
+    conta_cetip = models.CharField(max_length=10, null=True, blank=True)
+    codigo_cetip = models.CharField(max_length=10, null=True, blank=True)
+
+    class Meta:
+        verbose_name_plural = 'Fundos Locais'
+
+class Fundo_Offshore(Ativo):
+
+    class Meta:
+        verbose_name_plural = 'Fundos Offshore'
