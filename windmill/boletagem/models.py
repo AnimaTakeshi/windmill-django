@@ -29,6 +29,7 @@ Funcionamento:
     Movimentação do ativo.
 """
 import datetime
+import decimal
 from django.db import models
 from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelation
 from django.contrib.contenttypes.models import ContentType
@@ -39,10 +40,7 @@ import ativos.models
 
 class BoletaAcao(models.Model):
     """
-    Representa a boleta de um trade de ações. Ao fazer o fechamento de um dia
-    de um fundo, as boletas de ação do dia são processadas para gerar a boleta
-    de provisão (esta gerará a movimentação e quantidade de caixa) e a
-    movimentação do ativo.
+    Representa a boleta de um trade de ações.
     """
     OPERACAO = (
         ('C', 'C'),
@@ -90,8 +88,14 @@ class BoletaAcao(models.Model):
         """
         # Checar se já há boleta de provisão criada relacionada com esta.
         if self.boleta_provisao.all().exists() == False:
+            op = ''
+            if self.operacao == "C":
+                op = 'Compra '
+            else:
+                op = 'Venda '
             # Criar boleta de provisão
             boleta_provisao = BoletaProvisao(
+                descricao = op + self.acao.nome,
                 caixa_alvo = self.caixa_alvo,
                 fundo = self.fundo,
                 data_pagamento = self.data_liquidacao,
@@ -120,6 +124,7 @@ class BoletaAcao(models.Model):
                 valor_cheio = -(self.preco * self.quantidade),
                 data_inicio = self.data_operacao,
                 data_pagamento = self.data_liquidacao,
+                fundo = self.fundo,
                 content_object = self
             )
             boleta_CPR.save()
@@ -176,7 +181,7 @@ class BoletaRendaFixaLocal(models.Model):
     operacao = models.CharField('Compra/Venda', max_length=1, choices=OPERACAO)
     quantidade = models.DecimalField(max_digits=10, decimal_places=2)
     preco = models.DecimalField(max_digits=13, decimal_places=6)
-    taxa = models.DecimalField(max_digits=6, decimal_places=4)
+    taxa = models.DecimalField(max_digits=10, decimal_places=6)
     # Caixa que será afetado pela operação
     caixa_alvo = models.ForeignKey('ativos.Caixa', null=False, on_delete=models.PROTECT)
 
@@ -184,6 +189,111 @@ class BoletaRendaFixaLocal(models.Model):
     boleta_CPR = GenericRelation('BoletaCPR', related_query_name='CPR')
     relacao_quantidade = GenericRelation(Quantidade, related_query_name='qtd_rfloc')
     relacao_movimentacao = GenericRelation(Movimentacao, related_query_name='mov_rfloc')
+
+    class Meta:
+        verbose_name_plural = "Boletas de operação de renda fixa local"
+
+    def __str__(self):
+        operacao = ''
+        if self.operacao == 'C':
+            operacao = 'Compra'
+        else:
+            operacao = 'Venda'
+        return "%s de %s executada em %s." % (operacao, self.ativo, self.data_operacao)
+
+    def fechar_boleta(self):
+        """
+        Função para fazer o fechamento de uma boleta. O fechamento de uma boleta
+        faz com que ela crie as boletas de provisão, boletas de CPR,
+        quantidade e movimentações do ativo correspondente.
+        """
+        self.criar_boleta_provisao()
+        self.criar_boleta_CPR()
+        self.criar_quantidade()
+        self.criar_movimentacao()
+
+    def criar_boleta_provisao(self):
+        """
+        Cria uma boleta de provisão de acordo com os parâmeteros da boleta
+        de ação. Se já houver uma boleta de provisão criada, não há necessidade
+        de criar outra.
+        """
+        # Checar se já há boleta de provisão criada relacionada com esta.
+        if self.boleta_provisao.all().exists() == False:
+            op = ''
+            if self.operacao == "C":
+                op = 'Compra '
+            else:
+                op = 'Venda '
+            # Criar boleta de provisão
+            boleta_provisao = BoletaProvisao(
+                descricao = op + self.ativo.nome,
+                caixa_alvo = self.caixa_alvo,
+                fundo = self.fundo,
+                data_pagamento = self.data_liquidacao,
+                # A movimentação de caixa tem sinal oposto à variação de quantidade
+                financeiro = - (self.preco * self.quantidade),
+                content_object = self
+            )
+            boleta_provisao.save()
+
+    def criar_boleta_CPR(self):
+        """
+        Cria uma boleta de CPR de acordo com os parâmeteros da boleta
+        de ação. Se já houver uma boleta de CPR criada, não há necessidade
+        de criar outra.
+        """
+        # Checar se há boleta de CPR já criada:
+        if self.boleta_CPR.all().exists() == False:
+            # Criar boleta de CPR
+            op = ''
+            if self.operacao == "C":
+                op = 'Compra '
+            else:
+                op = 'Venda '
+            boleta_CPR = BoletaCPR(
+                descricao = op + self.ativo.nome,
+                valor_cheio = -(self.preco * self.quantidade),
+                data_inicio = self.data_operacao,
+                data_pagamento = self.data_liquidacao,
+                fundo = self.fundo,
+                content_object = self
+            )
+            boleta_CPR.save()
+
+    def criar_quantidade(self):
+        """
+        Cria uma quantidade do ativo de acordo com os parâmeteros da boleta
+        de ação. Se já houver uma quantidade criada, não há necessidade
+        de criar outra.
+        """
+        # Checar se há quantidade já criada
+        if self.relacao_quantidade.all().exists() == False:
+            # Criar Quantidade do Ativo
+            acao_quantidade = Quantidade(
+                qtd = self.quantidade,
+                fundo = self.fundo,
+                data = self.data_operacao,
+                content_object = self
+            )
+            acao_quantidade.save()
+
+    def criar_movimentacao(self):
+        """
+        Cria uma movimentação de acordo com os parâmeteros da boleta
+        de ação. Se já houver uma movimentação criada, não há necessidade
+        de criar outra.
+        """
+        # Checar se há movimentação já criada
+        if self.relacao_movimentacao.all().exists() == False:
+            # Criar Movimentacao do Ativo
+            acao_movimentacao = Movimentacao(
+                valor = self.preco * self.quantidade,
+                fundo = self.fundo,
+                data = self.data_operacao,
+                content_object = self
+            )
+            acao_movimentacao.save()
 
 class BoletaRendaFixaOffshore(models.Model):
     """
@@ -236,6 +346,8 @@ class BoletaFundoLocal(models.Model):
     operacao = models.CharField(max_length=13, choices=OPERACAO)
     liquidacao = models.CharField(max_length=13, choices=TIPO_LIQUIDACAO)
     financeiro = models.DecimalField(max_digits=16, decimal_places=6)
+    quantidade = models.DecimalField(max_digits=15, decimal_places=6)
+    preco = models.DecimalField(max_digits=15, decimal_places=6)
     caixa_alvo = models.ForeignKey('ativos.Caixa', null=False, on_delete=models.PROTECT)
 
     boleta_provisao = GenericRelation('BoletaProvisao', related_query_name='provisao')
@@ -260,7 +372,7 @@ class BoletaFundoOffshore(models.Model):
 
     ativo = models.ForeignKey('ativos.Fundo_Offshore', on_delete=models.PROTECT)
     estado = models.CharField(max_length=48)
-    data_operacao = models.DateField()
+    data_operacao = models.DateField(default=datetime.date.today)
     data_cotizacao = models.DateField()
     data_liquidacao = models.DateField()
 
@@ -275,8 +387,7 @@ class BoletaEmprestimo(models.Model):
     """
     OPERACAO = (
         ('Doador', 'Doador'),
-        ('Tomador', 'Tomador'),
-        ('Liquidação', 'Liquidação')
+        ('Tomador', 'Tomador')
     )
 
     ativo = models.ForeignKey('ativos.Acao', on_delete=models.PROTECT)
@@ -284,22 +395,34 @@ class BoletaEmprestimo(models.Model):
     fundo = models.ForeignKey('fundo.Fundo', on_delete=models.PROTECT)
     corretora = models.ForeignKey('fundo.Corretora', on_delete=models.PROTECT)
     data_vencimento = models.DateField()
-    data_liquidacao = models.DateField()
+    data_liquidacao = models.DateField(null=True, blank=True)
     reversivel = models.BooleanField()
-    data_reversao = models.DateField()
-    operacao = models.CharField('Operação', max_length=10)
+    data_reversao = models.DateField(null=True, blank=True)
+    operacao = models.CharField('Operação', max_length=10, choices=OPERACAO)
     comissao = models.DecimalField(max_digits=9, decimal_places=6)
-    quantidade = models.DecimalField(max_digits=10, decimal_places=6)
+    quantidade = models.DecimalField(max_digits=15, decimal_places=6)
     taxa = models.DecimalField(max_digits=8, decimal_places=6)
     preco = models.DecimalField(max_digits=10, decimal_places=6)
-    boleta_original = models.ForeignKey('self', on_delete=models.PROTECT)
+    boleta_original = models.ForeignKey('self', on_delete=models.PROTECT, null=True, blank=True)
+    caixa_alvo = models.ForeignKey('ativos.Caixa', on_delete=models.PROTECT)
+    calendario = models.ForeignKey('calendario.Calendario',
+        on_delete=models.PROTECT)
 
     boleta_provisao = GenericRelation('BoletaProvisao', related_query_name='provisao')
     boleta_CPR = GenericRelation('BoletaCPR', related_query_name='CPR')
     relacao_quantidade = GenericRelation(Quantidade, related_query_name='qtd_emprestimo')
     relacao_movimentacao = GenericRelation(Movimentacao, related_query_name='mov_emprestimo')
 
-    def liquidacao_boleta(self, quantidade):
+    class Meta:
+        verbose_name_plural = "Boletas de Empréstimo"
+
+    def financeiro(self, data_referencia=datetime.date.today()):
+        """ Datetime -> Decimal
+        Calcula o valor financeiro de um contrato.
+        """
+        return round(self.preco * self.quantidade * ((1 + self.taxa/100) ** decimal.Decimal((self.calendario.dia_trabalho_total(self.data_operacao, data_referencia)/252))-1),2)
+
+    def liquidar_boleta(self, quantidade):
         """
         Uma liquidação gera uma movimentação negativa do
         ativo, para que a movimentação entre como um rendimento do ativo na
@@ -316,8 +439,88 @@ class BoletaEmprestimo(models.Model):
     def fechar_boleta(self):
         """
         O fechamento de uma boleta de empréstimo acumula o CPR de aluguel.
-        Cria apenas uma quantidade.
+        Cria apenas uma quantidade de CPR.
         """
+
+
+    def criar_boleta_provisao(self):
+        """
+        Cria uma boleta de provisão de acordo com os parâmeteros da boleta
+        de ação. Se já houver uma boleta de provisão criada, não há necessidade
+        de criar outra.
+        """
+        # Checar se já há boleta de provisão criada relacionada com esta.
+        if self.boleta_provisao.all().exists() == False:
+            # Criar boleta de provisão
+            boleta_provisao = BoletaProvisao(
+                descricao = "Aluguel de " + self.ativo.nome,
+                caixa_alvo = self.caixa_alvo,
+                fundo = self.fundo,
+                data_pagamento = self.data_liquidacao,
+                # A movimentação de caixa tem sinal oposto à variação de quantidade
+                financeiro = - (self.preco * self.quantidade),
+                content_object = self
+            )
+            boleta_provisao.save()
+
+    def criar_boleta_CPR(self):
+        """
+        Cria uma boleta de CPR de acordo com os parâmeteros da boleta
+        de ação. Se já houver uma boleta de CPR criada, não há necessidade
+        de criar outra.
+        """
+        # Checar se há boleta de CPR já criada:
+        if self.boleta_CPR.all().exists() == False:
+            # Criar boleta de CPR
+            op = ''
+            if self.operacao == "C":
+                op = 'Compra '
+            else:
+                op = 'Venda '
+            boleta_CPR = BoletaCPR(
+                descricao = op + self.ativo.nome,
+                valor_cheio = -(self.preco * self.quantidade),
+                data_inicio = self.data_operacao,
+                data_pagamento = self.data_liquidacao,
+                fundo = self.fundo,
+                content_object = self
+            )
+            boleta_CPR.save()
+
+    def criar_quantidade(self):
+        """
+        Cria uma quantidade do ativo de acordo com os parâmeteros da boleta
+        de ação. Se já houver uma quantidade criada, não há necessidade
+        de criar outra.
+        """
+        # Checar se há quantidade já criada
+        if self.relacao_quantidade.all().exists() == False:
+            # Criar Quantidade do Ativo
+            acao_quantidade = Quantidade(
+                qtd = self.quantidade,
+                fundo = self.fundo,
+                data = self.data_operacao,
+                content_object = self
+            )
+            acao_quantidade.save()
+
+    def criar_movimentacao(self):
+        """
+        Cria uma movimentação de acordo com os parâmeteros da boleta
+        de ação. Se já houver uma movimentação criada, não há necessidade
+        de criar outra.
+        """
+        # Checar se há movimentação já criada
+        if self.relacao_movimentacao.all().exists() == False:
+            # Criar Movimentacao do Ativo
+            acao_movimentacao = Movimentacao(
+                valor = self.preco * self.quantidade,
+                fundo = self.fundo,
+                data = self.data_operacao,
+                content_object = self
+            )
+            acao_movimentacao.save()
+
 
 class BoletaCambio(models.Model):
     """
@@ -356,6 +559,7 @@ class BoletaProvisao(models.Model):
     Boleta para registrar despesas a serem pagas por um fundo
     """
 
+    descricao = models.CharField("Descrição", max_length=50)
     caixa_alvo = models.ForeignKey('ativos.Caixa', on_delete=models.PROTECT)
     fundo = models.ForeignKey('fundo.Fundo', on_delete=models.PROTECT)
     data_pagamento = models.DateField()
@@ -370,12 +574,17 @@ class BoletaProvisao(models.Model):
     object_id = models.PositiveIntegerField()
     content_object = GenericForeignKey('content_type', 'object_id')
 
+    class Meta:
+        verbose_name_plural = "Boletas de provisão"
+
 class BoletaCPR(models.Model):
     """
     Boleta para registrar CPR dos fundos.
     """
     # Descrição sobre o que é o CPR.
     descricao = models.CharField("Descrição", max_length=50)
+    # Fundo relativo ao CPR
+    fundo = models.ForeignKey('fundo.Fundo', on_delete=models.PROTECT)
     # Valor cheio do CPR.
     valor_cheio = models.DecimalField(max_digits=12, decimal_places=2,
         blank=True, null=True)

@@ -115,11 +115,14 @@ class Fundo_Local(Ativo):
     digito = models.CharField(max_length=1, null=True, blank=True)
     conta_cetip = models.CharField(max_length=10, null=True, blank=True)
     codigo_cetip = models.CharField(max_length=10, null=True, blank=True)
+    gerido = models.ForeignKey('fundo.Fundo', on_delete=models.PROTECT)
 
     class Meta:
         verbose_name_plural = 'Fundos Locais'
 
 class Fundo_Offshore(Ativo):
+
+    gerido = models.ForeignKey('fundo.Fundo', on_delete=models.PROTECT)
 
     class Meta:
         verbose_name_plural = 'Fundos Offshore'

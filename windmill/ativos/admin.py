@@ -11,7 +11,6 @@ import ativos.forms
 
 admin.site.register(Pais)
 admin.site.register(Moeda)
-admin.site.register(Caixa)
 admin.site.site_header = "Windmill"
 admin.site.site_title = "Portal Windmill"
 admin.site.index_title = "Portal Windmill - Anima Investimentos"
@@ -108,3 +107,9 @@ class CambioAdmin(ImportExportModelAdmin):
     list_filter = ('pais', 'moeda_origem', 'moeda_destino')
     search_fields = ('nome', 'bbg_ticker', 'moeda_origem', 'moeda_destino')
     ordering = ('pais', 'moeda_origem', 'moeda_destino')
+
+
+@admin.register(Caixa)
+class CaixaAdmin(ImportExportModelAdmin):
+    list_display = ('id', 'nome', 'moeda', 'zeragem')
+    

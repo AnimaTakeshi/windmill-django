@@ -11,7 +11,7 @@ from django.db import models
 
 
 # Create your tests here.
-class ModelAdminTests(TestCase):
+class ModelUnitTests(TestCase):
 
     def test_url_acoes_resolves(self):
         response = self.client.get('/ativos/acoes/')
