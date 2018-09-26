@@ -1,2 +1,1 @@
-release: python windmill/manage.py migrate
 web: gunicorn windmill.wsgi

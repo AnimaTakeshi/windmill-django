@@ -151,6 +151,29 @@ class Corretora(models.Model):
     def __str__(self):
         return '%s' % (self.nome)
 
+    def custo_total_acoes(self, financeiro, quantidade):
+        """
+        Retorna o total de taxas para um trade de ações
+        """
+
+    def calcular_corretagem(self, financeiro, quantidade):
+        """
+        Calcula a corretagem de um trade de ações.
+        """
+        return -self.taxa_corretagem/100*abs(financeiro) - self.corretagem_por_acao*abs(quantidade)
+
+    def calcular_emolumentos(self, financeiro):
+        """
+        Calcula os emolumentos de um trade de ações.
+        """
+        return -abs(financeiro)*self.emolumentos/100
+
+    def calcular_rebate(self, financeiro):
+        """
+        Calcula o rebate que é devolvido ao gestor.
+        """
+        return -abs
+
 class Custodiante(models.Model):
     """
     Descreve quem é a custodiante do fundo/corretora.
@@ -237,9 +260,16 @@ class Quantidade(models.Model):
 
     # Content type para servir de ForeignKey de qualquer boleta a ser
     # inserida no sistema.
-    content_type = models.ForeignKey(ContentType, on_delete=models.PROTECT)
+    content_type = models.ForeignKey(ContentType, on_delete=models.PROTECT,
+        related_name='quantidade_boleta')
     object_id = models.PositiveIntegerField()
     content_object = GenericForeignKey('content_type', 'object_id')
+
+    # ContentType para servir de ForeignKey para ativo ou CPR
+    tipo_quantidade = models.ForeignKey(ContentType, on_delete=models.PROTECT,
+        related_name='quantidade_ativo')
+    tipo_id = models.PositiveIntegerField()
+    objeto_quantidade = GenericForeignKey('tipo_quantidade', 'tipo_id')
 
     def __str__(self):
         return '%s' % (self.content_object.__str__())
@@ -258,9 +288,16 @@ class Movimentacao(models.Model):
 
     # Content type para servir de ForeignKey de qualquer boleta a ser
     # inserida no sistema.
-    content_type = models.ForeignKey(ContentType, on_delete=models.PROTECT)
+    content_type = models.ForeignKey(ContentType, on_delete=models.PROTECT,
+        related_name='movimentacao_boleta')
     object_id = models.PositiveIntegerField()
     content_object = GenericForeignKey('content_type', 'object_id')
+
+    # ContentType para servir de ForeignKey para ativo ou CPR
+    tipo_movimentacao = models.ForeignKey(ContentType, on_delete=models.PROTECT,
+        related_name='movimentacao_ativo')
+    tipo_id = models.PositiveIntegerField()
+    objeto_movimentacao = GenericForeignKey('tipo_movimentacao', 'tipo_id')
 
     def __str__(self):
         return '%s' % (self.content_object.__str__())

@@ -416,6 +416,9 @@ class BoletaEmprestimo(models.Model):
     class Meta:
         verbose_name_plural = "Boletas de Empréstimo"
 
+    def __str__(self):
+        return "Empréstimo " + self.ativo.nome + " - " + self.operacao
+
     def financeiro(self, data_referencia=datetime.date.today()):
         """ Datetime -> Decimal
         Calcula o valor financeiro de um contrato.
@@ -429,12 +432,29 @@ class BoletaEmprestimo(models.Model):
         avaliação do desempenho deste, sem alteração de quantidade do mesmo,
         e uma movimentação de entrada de caixa.
         Uma liquidação pode ser completa ou parcial. A liquidação completa
-        implica apenas na criação da movimentação de caixa e do ativo. Na liquidação
+        implica na criação da movimentação de caixa e do ativo, e criação de um
+        CPR a ser recebido em D+1 da liquidação. Na liquidação
         parcial, apenas uma parte das ações do contrato de aluguel são liquidadas.
         Isso separa a boleta em duas partes, a parte que foi liquidada e a parte
         que continua me vigência. A boleta original se torna a parte liquidada
         e uma nova boleta é criada para o restante das ações ainda alugadas.
         """
+        if quantidade > 0:
+            if quantidade == self.quantidade:
+                # Liquidar completamente
+                # Cria movimentação do ativo:
+                pass
+            elif quantidade < self.quantidade:
+                # Liquidar parcialmente e criar nova boleta de aluguel
+                pass
+            else:
+                # Erro - quantidade maior que a quantidade do contrato
+                pass
+        else:
+            # Erro - quantidade não pode ser negativa
+            pass
+
+
 
     def fechar_boleta(self):
         """
@@ -520,7 +540,6 @@ class BoletaEmprestimo(models.Model):
                 content_object = self
             )
             acao_movimentacao.save()
-
 
 class BoletaCambio(models.Model):
     """
@@ -620,3 +639,6 @@ class BoletaPrecos(models.Model):
     Boleta para registro de preços de ativos.
     """
     ativo = models.ForeignKey('ativos.Ativo', on_delete=models.PROTECT)
+
+class BoletaPassivo(models.Model):
+    pass
