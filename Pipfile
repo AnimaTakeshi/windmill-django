@@ -18,6 +18,7 @@ django-import-export = "*"
 django-polymorphic = "*"
 django-phonenumber-field = "*"
 openpyxl = "==2.4.9"
+prompt-toolkit = "*"
 
 [dev-packages]
 coverage = "*"
