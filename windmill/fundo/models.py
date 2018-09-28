@@ -10,7 +10,6 @@ Responsabilidades deste app:
 from django.db import models
 from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelation
 from django.contrib.contenttypes.models import ContentType
-
 from phonenumber_field.modelfields import PhoneNumberField
 
 # Create your models here.
@@ -60,6 +59,14 @@ class Fundo(models.Model):
     # mensalmente.
     capitalizacao_taxa_adm = models.CharField(max_length=15,
         choices=CAPITALIZACAO, null=True, blank=True)
+    # Identificador de conta da corretora IB
+    ib_id = models.CharField(blank=True, null=True, max_length=15)
+    # Identificador de conta da BTG
+    btg_id = models.CharField(blank=True, null=True, max_length=15)
+    # Identificador de conta XP
+    xp_id = models.CharField(blank=True, null=True, max_length=15)
+    # Identificador de conta Jefferies
+    jefferies_id = models.CharField(blank=True, null=True, max_length=15)
 
     class Meta:
         ordering = ['nome']

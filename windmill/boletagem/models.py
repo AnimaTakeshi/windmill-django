@@ -639,6 +639,15 @@ class BoletaPrecos(models.Model):
     Boleta para registro de preços de ativos.
     """
     ativo = models.ForeignKey('ativos.Ativo', on_delete=models.PROTECT)
+    data = models.DateField()
+    # Preço do ativo.
+    preco = models.DecimalField(max_digits=13, decimal_places=6)
+    # Tipo de preço - Mercado, fechamento, contábil, gerencial,
+    # tipo = models.CharField - limitar escolhas pelas colunas do modelo Preço
+
+    class Meta:
+        unique_together = (('ativo', 'data'),)
+
 
 class BoletaPassivo(models.Model):
     pass

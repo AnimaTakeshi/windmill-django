@@ -4,7 +4,7 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-django = "==2.1"
+django = "==2.0"
 pandas = "*"
 "psycopg2" = "*"
 sqlalchemy = "*"
@@ -17,11 +17,13 @@ django-widget-tweaks = "*"
 django-import-export = "*"
 django-polymorphic = "*"
 django-phonenumber-field = "*"
+openpyxl = "==2.4.9"
 
 [dev-packages]
 coverage = "*"
 selenium = "*"
 jupyter = "*"
+prompt-toolkit = "*"
 
 [requires]
 python_version = "3.6"
