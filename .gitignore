@@ -21,3 +21,4 @@ tests/report/
 test_coverage/
 .coveragerc
 geckodriver.log
+Pipfile-deprecated.lock

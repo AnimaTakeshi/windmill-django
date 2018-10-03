@@ -18,10 +18,14 @@ django-import-export = "*"
 django-polymorphic = "*"
 django-phonenumber-field = "*"
 openpyxl = "==2.4.9"
+pytest-django = "*"
+model-mommy = "*"
 
 [dev-packages]
 coverage = "*"
 selenium = "*"
+ipython = "*"
+requests = "*"
 
 [requires]
 python_version = "3.6"

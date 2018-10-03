@@ -67,6 +67,9 @@ class Fundo(models.Model):
     xp_id = models.CharField(blank=True, null=True, max_length=15)
     # Identificador de conta Jefferies
     jefferies_id = models.CharField(blank=True, null=True, max_length=15)
+    # Caixa padrão é o caixa em que o fundo recebe aportes. Quando há
+    # movimentação de caixa sem caixa especificado, o caixa padrão é usado
+    caixa_padrao = models.ForeignKey('ativos.Caixa', on_delete=models.PROTECT)
 
     class Meta:
         ordering = ['nome']
@@ -335,3 +338,12 @@ class CPR(models.Model):
     """
     Armazena informações sobre CPR do fundo.
     """
+    descricao = models.CharField(max_length=20)
+    valor = models.DecimalField(max_digits=20, decimal_places=6)
+    data = models.DateField()
+
+    # Chave estrangeira para a boleta originadora do CPR, caso aplicável.
+    content_type = models.ForeignKey(ContentType, on_delete=models.PROTECT,
+        related_name='boleta', blank=True, null=True)
+    object_id = models.PositiveIntegerField()
+    content_object = GenericForeignKey('content_type', 'object_id')
