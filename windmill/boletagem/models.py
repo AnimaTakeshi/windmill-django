@@ -426,12 +426,12 @@ class BoletaEmprestimo(models.Model):
         a boleta salva é a boleta original, então o campo deve se referenciar
         a ele mesmo.
         """
-        if 'boleta_original' in kwargs:
-            super().save(*args, **kwargs)
-        else:
+        if self.boleta_original == None:
             super().save(*args, **kwargs)
             self.boleta_original = self
             super().save()
+        else:
+            super().save(*args, **kwargs)
 
     def financeiro(self, data_referencia=datetime.date.today()):
         """ Datetime -> Decimal
@@ -449,7 +449,8 @@ class BoletaEmprestimo(models.Model):
             data_vencimento = datetime.date - nova data de vencimento
             data_renovacao = datetime.date - data de renovação do contrato
         Ao renovar um empréstimo, ele pode ser feito de duas maneiras:
-            - Renovação completa, onde a data de vencimento é adiada.
+            - Renovação completa, onde a data de vencimento é adiada. A parcela
+            não renovada deve imediatamente ser liquidada
             - Renovação parcial, onde parte do contrato é liquidado e
             a outra parte é renovada, com sua data de vencimento adiada.
         """
@@ -464,11 +465,13 @@ class BoletaEmprestimo(models.Model):
                 boleta_parcial_liquidada = self
 
                 # Remove o ID, para que, ao salvar o contrato, salve como um novo contrato
+                # com as informações relevantes atualizadas.
                 boleta_parcial_liquidada.id = None
                 boleta_parcial_liquidada.quantidade = self.quantidade - quantidade
                 boleta_parcial_liquidada.data_liquidacao = data_renovacao
                 boleta_parcial_liquidada.boleta_original = self.id
                 boleta_parcial_liquidada.save()
+                # Liquidar a boleta
 
                 self.data_vencimento = data_vencimento
                 self.quantidade = quantidade
@@ -481,6 +484,8 @@ class BoletaEmprestimo(models.Model):
 
     def liquidar_boleta(self, quantidade, data_referencia=None):
         """
+        quantidade - quantidade do ativo liquidado
+        data_referencia - data de liquidação da boleta
         Uma liquidação gera uma movimentação negativa do
         ativo, para que a movimentação entre como um rendimento do ativo na
         avaliação do desempenho deste, sem alteração de quantidade do mesmo,
@@ -496,13 +501,12 @@ class BoletaEmprestimo(models.Model):
         Como conseguimos ver as boletas liquidadas apenas no dia seguinte, a
         data_referencia padrão é D-1 de hoje.
         """
-        # TODO: Testar
         # Como liquidamos
         if data_referencia == None:
             data_referencia = self.calendario.dia_trabalho(datetime.date.today(), -1)
         # Se houver data de reversão, data de liquidação deve ser maior ou
         # igual à data de reversão
-        if self.reversivel == True:
+        if self.reversivel == True and self.data_reversao is not None:
             # Data de liquidação deve ser maior que data de reversão
             if data_referencia >= self.data_reversao:
                 if quantidade > 0:
@@ -510,12 +514,12 @@ class BoletaEmprestimo(models.Model):
                         # Liquidar completamente
                         # 1. Atualizar data de liquidação
                         self.data_liquidacao = data_referencia
+                        print('Liquidação completa!')
                         self.save()
                         # Cria movimentação do ativo:
                         self.criar_movimentacao()
                         # Criar boleta de provisão de pagamento
                         self.criar_boleta_provisao()
-
 
                     elif quantidade < self.quantidade:
                         # Criar nova boleta de aluguel
@@ -529,22 +533,20 @@ class BoletaEmprestimo(models.Model):
                             data_reversao=self.data_reversao,
                             operacao=self.operacao,
                             comissao=self.comissao,
-                            quantidade=self.quantidade-quantidade,
+                            quantidade=quantidade,
                             preco=self.preco,
-                            taxa=self.taxa,
+                            taxa=round(self.taxa,6),
                             boleta_original=self.boleta_original,
                             caixa_alvo=self.caixa_alvo,
                             calendario=self.calendario)
                         nova_boleta.save()
-
+                        nova_boleta.liquidar_boleta(quantidade, data_referencia)
                         # Liquidar boleta parcial
-                        # Atualizar boleta com nova quantidade e data de liquidacao
-                        self.quantidade = quantidade
-                        self.data_liquidacao = data_referencia
+                        # Atualizar boleta com nova quantidade
+                        self.quantidade -= quantidade
                         # Salvar alterações no banco de dados
                         self.save()
-                        # Liquida a boleta
-                        self.liquidar_boleta(quantidade, data_referencia)
+
                     else:
                         # Erro - quantidade maior que a quantidade do contrato
                         raise ValueError("A quantidade a ser liquidada é maior que a quantidade do contrato. Insira uma quantidade válida.")
@@ -556,6 +558,8 @@ class BoletaEmprestimo(models.Model):
         # Caso a boleta não seja reversível, o contrato deve ser carregado até o fim do termo.
         elif data_referencia == self.data_liquidacao:
             pass
+        elif self.data_reversao is None:
+            raise ValueError("A boleta não possui data de reversão, apesar de ser reversível. Insira a data de reversão ou marque-a como não reversível.")
         # Erro: O contrato só pode ser liquidado ao final do termo
         else:
             raise ValueError('O contrato não é reversível, só é possível liquidá-lo no vencimento.')
@@ -581,7 +585,7 @@ class BoletaEmprestimo(models.Model):
                 caixa_alvo = self.caixa_alvo,
                 fundo = self.fundo,
                 # Pagamento em d+1 (padrão Brasil)
-                data_pagamento = self.calendario.diatrabalho(self.data_liquidacao, 1),
+                data_pagamento = self.calendario.dia_trabalho(self.data_liquidacao, 1),
                 # A movimentação de caixa tem sinal oposto à variação de quantidade
                 financeiro = self.financeiro(self.data_liquidacao),
                 content_object = self
@@ -680,7 +684,7 @@ class BoletaProvisao(models.Model):
     caixa_alvo = models.ForeignKey('ativos.Caixa', on_delete=models.PROTECT)
     fundo = models.ForeignKey('fundo.Fundo', on_delete=models.PROTECT)
     data_pagamento = models.DateField()
-    financeiro = models.DecimalField(max_digits=10, decimal_places=2)
+    financeiro = models.DecimalField(max_digits=20, decimal_places=2)
 
     relacao_quantidade = GenericRelation(Quantidade, related_query_name='qtd_provisao')
     relacao_movimentacao = GenericRelation(Movimentacao, related_query_name='mov_provisao')
