@@ -240,10 +240,10 @@ class Vertice(models.Model):
     """
     Um vertice descreve uma relacao entre carteira e ativo, indicando o quanto
     do ativo a carteira possui, e o quanto do ativo foi movimentado no dia.
-    A quantidade e movimentação são salvos como valores para que a busca no
-    banco de dados seja mais rápida. Uma outra tabela guarda a relação
-    entre os modelos para que seja possível explodir um vértice entre várias
-    quantidades/movimentações feitas.
+    A quantidade e movimentação são salvos como valores ao invés de chave
+    estrangeira para que a busca no banco de dados seja mais rápida. Uma
+    outra tabela guarda a relação entre os modelos para que seja possível
+    explodir um vértice entre várias quantidades/movimentações feitas.
     """
     fundo = models.ForeignKey('Fundo', on_delete=models.PROTECT)
     ativo = models.ForeignKey('ativos.Ativo', on_delete=models.PROTECT)
@@ -260,8 +260,7 @@ class Vertice(models.Model):
 
 class Quantidade(models.Model):
     """
-    Uma quantidade de um objeto é gerada quando o ativo é operado. O ID da
-    operação indica quando a quantidade
+    Uma quantidade de um ativo ou CPR é gerada quando o ativo é operado.
     """
     # Quantidade do ativo.
     qtd = models.DecimalField(decimal_places=6, max_digits=20)
@@ -341,6 +340,7 @@ class CPR(models.Model):
     descricao = models.CharField(max_length=20)
     valor = models.DecimalField(max_digits=20, decimal_places=6)
     data = models.DateField()
+    fundo = models.ForeignKey('fundo.Fundo', on_delete=models.PROTECT)
 
     # Chave estrangeira para a boleta originadora do CPR, caso aplicável.
     content_type = models.ForeignKey(ContentType, on_delete=models.PROTECT,

@@ -33,6 +33,8 @@ import decimal
 from django.db import models
 from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelation
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ValidationError
+from django.utils.translation import gettext_lazy as _
 from fundo.models import Quantidade, Movimentacao
 import ativos.models as am
 import fundo.models as fm
@@ -69,6 +71,13 @@ class BoletaAcao(models.Model):
 
     def __str__(self):
         return "Operação de %s executada em %s." % (self.acao, self.data_operacao)
+
+    def clean_data_liquidacao(self):
+        """
+        Data de liquidação da boleta deve ser maior que a data de operação.
+        """
+        if self.data_liquidacao < self.data_operacao:
+            raise ValidationError(_('Insira uma data de liquidação maior que a data de operação.'))
 
     def fechar_boleta(self):
         """
@@ -386,6 +395,7 @@ class BoletaEmprestimo(models.Model):
     """
     Representa uma operação de empréstimo de ações locais.
     """
+    # TODO: PARTE DE CPR.
     OPERACAO = (
         ('Doador', 'Doador'),
         ('Tomador', 'Tomador')
@@ -432,6 +442,60 @@ class BoletaEmprestimo(models.Model):
             super().save()
         else:
             super().save(*args, **kwargs)
+
+    def clean_data_vencimento(self):
+        """
+        Faz validação do campo data_vencimento
+        """
+        if self.data_vencimento < self.data_operacao:
+            raise ValidationError(_('A data de vencimento deve ser posterior à data de operação.'))
+        if self.data_vencimento < self.data_reversao and self.data_reversao is not None:
+            raise ValidationError(_('A data de vencimento deve ser superior à data de reversão.'))
+
+    def clean_data_liquidacao(self):
+        """
+        Validação do campo data_liquidacao
+        """
+        if self.data_liquidacao <= self.data_operacao:
+            raise ValidationError(_('A data de liquidação deve ser posterior à data de operação, anterior ou igual à data de vencimento e igual ou posterior à data de reversão.'))
+        if self.data_liquidacao > self.data_vencimento:
+            raise ValidationError(_('A data de liquidação deve ser posterior à data de operação, anterior ou igual à data de vencimento e igual ou posterior à data de reversão.'))
+        if self.data_liquidacao < self.data_reversao and self.data_reversao is not None:
+            raise ValidationError(_('A data de liquidação deve ser posterior à data de operação, anterior ou igual à data de vencimento e igual ou posterior à data de reversão.'))
+
+    def clean_data_reversao(self):
+        """
+        Validação do campo data_reversao
+        """
+        if self.reversivel == True:
+            if self.data_reversao is None:
+                raise ValueError(_('Contrato de aluguel está marcado como reversível. É necessário informar a data de reversão.'))
+            if self.data_reversao < self.data_operacao:
+                raise ValidationError(_('A data de reversão deve ser posterior à data de operação do contrato de aluguel.'))
+
+    def clean_quantidade(self):
+        """
+        Validação do campo quantidade
+        """
+
+        if self.quantidade < 0:
+            raise ValidationError(_('Quantidade inválida. Insira uma quantidade positiva.'))
+
+    def clean_taxa(self):
+        """
+        Validação do campo quantidade
+        """
+
+        if self.taxa < 0:
+            raise ValidationError(_('Taxa inválida. Insira uma taxa positiva.'))
+
+    def clean_preco(self):
+        """
+        Validação do campo preço
+        """
+
+        if self.preco < 0:
+            raise ValidationError(_('Preço inválido. Insira uma preço positivo.'))
 
     def financeiro(self, data_referencia=datetime.date.today()):
         """ Datetime -> Decimal
@@ -710,7 +774,7 @@ class BoletaCPR(models.Model):
     valor_cheio = models.DecimalField(max_digits=12, decimal_places=2,
         blank=True, null=True)
     # Valor parcial do CPR, no caso de boletar CPR que acumula diariamente
-    valor_parcial = models.DecimalField(max_digits=12, decimal_places=2,
+    valor_diario = models.DecimalField(max_digits=12, decimal_places=2,
         blank=True, null=True)
     # Data em que o CPR deve começar a ser considerado no fundo
     data_inicio = models.DateField()
@@ -749,7 +813,6 @@ class BoletaPrecos(models.Model):
 
     class Meta:
         unique_together = (('ativo', 'data'),)
-
 
 class BoletaPassivo(models.Model):
     pass

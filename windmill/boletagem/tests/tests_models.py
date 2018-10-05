@@ -1,15 +1,20 @@
 import datetime
 import decimal
 from model_mommy import mommy
+import pytest
 from django.test import TestCase
 from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelation
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ValidationError
 from django.db import models
 import boletagem.models as bm
 import fundo.models as fm
 
 # Create your tests here.
 class BoletaEmprestimoUnitTests(TestCase):
+    """
+    Classe de testes para o modelo BoletaEmprestimo.
+    """
 
     def setUp(self):
         # Boleta inicial - usada para testar os métodos unitários
@@ -57,8 +62,85 @@ class BoletaEmprestimoUnitTests(TestCase):
             preco=decimal.Decimal(10),
             taxa=decimal.Decimal(0.15),
             reversivel=True)
+        self.boleta_vencimento_errado = mommy.make('boletagem.BoletaEmprestimo',
+            data_vencimento=datetime.date(year=2018, month=10, day=1),
+            data_operacao=datetime.date(year=2018, month=10, day=3))
+        self.boleta_liquidacao_anterior_operacao = mommy.make('boletagem.BoletaEmprestimo',
+            data_liquidacao=datetime.date(year=2018, month=10, day=1),
+            data_operacao=datetime.date(year=2018, month=10, day=3),
+            data_vencimento=datetime.date(year=2018, month=10, day=30))
+        self.boleta_liquidacao_posterior_vencimento = mommy.make('boletagem.BoletaEmprestimo',
+            data_vencimento=datetime.date(year=2018, month=10, day=1),
+            data_liquidacao=datetime.date(year=2018, month=10, day=3))
+        self.boleta_liquidacao_anterior_reversivel = mommy.make('boletagem.BoletaEmprestimo',
+            data_liquidacao=datetime.date(year=2018, month=10, day=1),
+            data_reversao=datetime.date(year=2018, month=10, day=3),
+            data_vencimento=datetime.date(year=2018, month=10, day=20))
+        self.boleta_correta = mommy.make('boletagem.BoletaEmprestimo',
+            data_liquidacao=datetime.date(year=2018, month=10, day=25),
+            reversivel=False,
+            data_vencimento=datetime.date(year=2018, month=10, day=30),
+            data_operacao=datetime.date(year=2018, month=10, day=1),
+            quantidade=1000,
+            taxa=0.2,
+            preco=10)
         self.data_de_liquidacao = datetime.date(year=2018, month=10, day=30)
         self.quantidade_liquidada = 10000
+
+    def test_vencimento_invalido(self):
+        self.assertRaises(ValidationError, self.boleta_vencimento_errado.clean_data_vencimento)
+
+    def test_liquidacao_invalida(self):
+        self.assertRaises(ValidationError, self.boleta_liquidacao_anterior_operacao.clean_data_liquidacao)
+        self.assertRaises(ValidationError, self.boleta_liquidacao_posterior_vencimento.clean_data_liquidacao)
+        self.assertRaises(ValidationError, self.boleta_liquidacao_anterior_reversivel.clean_data_liquidacao)
+
+    def test_data_reversao_invalida(self):
+        """
+        Testa a validação da data de reversão do contrato de aluguel.
+        """
+        boleta_reversao_antecipada = mommy.make('boletagem.BoletaEmprestimo',
+            reversivel=True,
+            data_operacao=datetime.date(year=2018, month=10, day=3),
+            data_reversao=datetime.date(year=2018, month=10, day=2))
+        boleta_reversao_vazia = mommy.make('boletagem.BoletaEmprestimo',
+            reversivel=True,
+            data_operacao=datetime.date(year=2018, month=10, day=3))
+        self.assertRaises(ValidationError, boleta_reversao_antecipada.clean_data_reversao)
+        self.assertRaises(ValueError, boleta_reversao_vazia.clean_data_reversao)
+
+    # Implementar verificação de quantidade deve ser igual ou menor que a quantidade disponível.
+    @pytest.mark.xfail
+    def test_quantidade_invalida(self):
+        """
+        Teste validação quantidade
+        """
+        boleta_quantidade_invalida = mommy.make('boletagem.BoletaEmprestimo',
+            data_liquidacao=datetime.date(year=2018, month=10, day=25),
+            reversivel=False,
+            data_vencimento=datetime.date(year=2018, month=10, day=30),
+            data_operacao=datetime.date(year=2018, month=10, day=1),
+            quantidade=-1)
+        self.assertRaises(ValidationError, boleta_quantidade_invalida.clean_quantidade)
+        self.assertRaises(ValueError, boleta_quantidade_superior_que_disponivel.clean_quantidade)
+
+    def test_taxa_invalida(self):
+        """
+        Teste de validação do campo taxa
+        """
+        boleta_taxa_invalida = self.boleta_correta
+        boleta_taxa_invalida.id = None
+        boleta_taxa_invalida.taxa = -0.1
+        self.assertRaises(ValidationError, boleta_taxa_invalida.clean_taxa)
+
+    def test_preco_invalido(self):
+        """
+        Teste de validação do campo preço
+        """
+        boleta_preco_invalido = self.boleta_correta
+        boleta_preco_invalido.id = None
+        boleta_preco_invalido.preco = -10
+        self.assertRaises(ValidationError, boleta_preco_invalido.clean_preco)
 
     def test_boleta_emprestimo_criada(self):
         self.assertIsInstance(self.boleta, bm.BoletaEmprestimo)
@@ -259,3 +341,44 @@ class BoletaEmprestimoUnitTests(TestCase):
         movs = fm.Movimentacao.objects.get(content_type__pk=type.id, object_id=boleta_liquidada.id)
         # Verificar se a boleta liquidada gerou a boleta de provisão
         bol_prov = bm.BoletaProvisao.objects.get(content_type__pk=type.id, object_id=boleta_liquidada.id)
+
+    @pytest.mark.xfail
+    def test_fechar_boleta(self):
+        """
+        Testar fechamento de boleta de empréstimo
+        """
+        self.assertRaises(ValidationError, self.boleta.fechar_boleta)
+
+class BoletaAcaoUnitTests(TestCase):
+    """
+    Classe de testes para o modelo BoletaAcao.
+    """
+
+    def setUp(self):
+        self.boleta = mommy.make('boletagem.BoletaAcao',
+            data_operacao=datetime.date(year=2018, month=10, day=2),
+            data_liquidacao=datetime.date(year=2018, month=10, day=5),
+            operacao='C',
+            quantidade=100,
+            preco=10)
+
+    def test_liquidacao_invalida(self):
+        """
+        Testa a validação do campo data_liquidação da boleta de ações
+        """
+        self.boleta.id = None
+        self.boleta.data_liquidacao = self.boleta.data_operacao - datetime.timedelta(days=2)
+        self.assertRaises(ValidationError, self.boleta.clean_data_liquidacao)
+
+    def test_clean_quantidade(self):
+        """
+        Testa a validação do campo quantidade.
+        """
+        self.boleta.id = None
+        self.boleta.operacao = 'V'
+        self.assertRaises(ValidationError, self.boleta.clean_quantidade)
+        self.boleta.operacao = 'C'
+        self.boleta.quantidade = -100
+        self.assertRaises(ValidationError, self.boleta.clean_quantidade)
+
+        self.assertLess
