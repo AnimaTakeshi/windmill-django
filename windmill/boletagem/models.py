@@ -54,6 +54,7 @@ class BoletaAcao(models.Model):
     data_operacao = models.DateField(default=datetime.date.today, null=False)
     data_liquidacao = models.DateField(null=False)
     corretora = models.ForeignKey("fundo.Corretora", null=False, on_delete=models.PROTECT)
+    corretagem = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
     fundo = models.ForeignKey('fundo.Fundo', null=False, on_delete=models.PROTECT)
     operacao = models.CharField('Compra/Venda', max_length=1, choices=OPERACAO)
     quantidade = models.IntegerField()
@@ -79,6 +80,33 @@ class BoletaAcao(models.Model):
         if self.data_liquidacao < self.data_operacao:
             raise ValidationError(_('Insira uma data de liquidação maior que a data de operação.'))
 
+    def clean_quantidade(self):
+        """
+        Alinha o valor de quantidade com a operação.
+        """
+        if self.operacao == 'V':
+            self.quantidade = -abs(self.quantidade)
+        else:
+            self.quantidade = abs(self.quantidade)
+
+    def clean_preco(self):
+        """
+        Não aceita preços negativos, apenas positivos
+        """
+        if self.preco < 0 :
+            self.preco = -self.preco
+
+    def save(self, *args, **kwargs):
+        """
+        Caso o valor da corretagem não tenha sido inserido, calcula.
+        """
+        self.clean()
+        if self.corretagem == None:
+            self.corretagem = self.corretora.calcular_corretagem(self.quantidade * self.preco, self.quantidade)
+            super().save(*args, **kwargs)
+        else:
+            super().save(*args, **kwargs)
+
     def fechar_boleta(self):
         """
         Função para fazer o fechamento de uma boleta. O fechamento de uma boleta
@@ -92,7 +120,7 @@ class BoletaAcao(models.Model):
 
     def criar_boleta_provisao(self):
         """
-        Cria uma boleta de provisão de acordo com os parâmeteros da boleta
+        Cria uma boleta de provisão de acordo com os parâmetros da boleta
         de ação. Se já houver uma boleta de provisão criada, não há necessidade
         de criar outra.
         """
@@ -110,7 +138,7 @@ class BoletaAcao(models.Model):
                 fundo = self.fundo,
                 data_pagamento = self.data_liquidacao,
                 # A movimentação de caixa tem sinal oposto à variação de quantidade
-                financeiro = - (self.preco * self.quantidade),
+                financeiro = - (self.preco * self.quantidade) + self.corretagem,
                 content_object = self
             )
             boleta_provisao.save()
@@ -131,7 +159,7 @@ class BoletaAcao(models.Model):
                 op = 'Venda '
             boleta_CPR = BoletaCPR(
                 descricao = op + self.acao.nome,
-                valor_cheio = -(self.preco * self.quantidade),
+                valor_cheio = -(self.preco * self.quantidade) + self.corretagem,
                 data_inicio = self.data_operacao,
                 data_pagamento = self.data_liquidacao,
                 fundo = self.fundo,
@@ -152,7 +180,8 @@ class BoletaAcao(models.Model):
                 qtd = self.quantidade,
                 fundo = self.fundo,
                 data = self.data_operacao,
-                content_object = self
+                content_object = self,
+                objeto_quantidade = self.acao
             )
             acao_quantidade.save()
 
@@ -166,10 +195,11 @@ class BoletaAcao(models.Model):
         if self.relacao_movimentacao.all().exists() == False:
             # Criar Movimentacao do Ativo
             acao_movimentacao = Movimentacao(
-                valor = self.preco * self.quantidade,
+                valor = self.preco * self.quantidade + self.corretagem,
                 fundo = self.fundo,
                 data = self.data_operacao,
-                content_object = self
+                content_object = self,
+                objeto_movimentacao = self.acao
             )
             acao_movimentacao.save()
 
@@ -192,6 +222,7 @@ class BoletaRendaFixaLocal(models.Model):
     quantidade = models.DecimalField(max_digits=10, decimal_places=2)
     preco = models.DecimalField(max_digits=13, decimal_places=6)
     taxa = models.DecimalField(max_digits=10, decimal_places=6)
+    corretagem = models.DecimalField(max_digits=13, decimal_places=6)
     # Caixa que será afetado pela operação
     caixa_alvo = models.ForeignKey('ativos.Caixa', null=False, on_delete=models.PROTECT)
 
@@ -210,6 +241,26 @@ class BoletaRendaFixaLocal(models.Model):
         else:
             operacao = 'Venda'
         return "%s de %s executada em %s." % (operacao, self.ativo, self.data_operacao)
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        if self.corretagem is None:
+            self.corretagem = -abs(self.corretora.taxa_fixa)
+        super().save(*args, **kwargs)
+
+    def clean_data_liquidacao(self):
+        if self.data_liquidacao < self.data_operacao:
+            raise ValidationError(_('A data de liquidação não pode ser anterior à data de operação.'))
+
+    def clean_quantidade(self):
+        if self.operacao == 'C':
+            self.quantidade = abs(self.quantidade)
+        else:
+            self.quantidade = -abs(self.quantidade)
+
+    def clean_preco(self):
+        if self.preco < 0:
+            raise ValidationError(_("Preço inválido, informe um preço de valor positivo."))
 
     def fechar_boleta(self):
         """
@@ -242,8 +293,9 @@ class BoletaRendaFixaLocal(models.Model):
                 fundo = self.fundo,
                 data_pagamento = self.data_liquidacao,
                 # A movimentação de caixa tem sinal oposto à variação de quantidade
-                financeiro = - (self.preco * self.quantidade),
+                financeiro = - (self.preco * self.quantidade) + self.corretagem,
                 content_object = self
+
             )
             boleta_provisao.save()
 
@@ -284,24 +336,26 @@ class BoletaRendaFixaLocal(models.Model):
                 qtd = self.quantidade,
                 fundo = self.fundo,
                 data = self.data_operacao,
-                content_object = self
+                content_object = self,
+                objeto_quantidade = self.ativo
             )
             acao_quantidade.save()
 
     def criar_movimentacao(self):
         """
-        Cria uma movimentação de acordo com os parâmeteros da boleta
-        de ação. Se já houver uma movimentação criada, não há necessidade
-        de criar outra.
+        Cria uma movimentação de acordo com os parâmeteros da boleta.
+        Se já houver uma movimentação criada, não há necessidade de
+        criar outra.
         """
         # Checar se há movimentação já criada
         if self.relacao_movimentacao.all().exists() == False:
             # Criar Movimentacao do Ativo
             acao_movimentacao = Movimentacao(
-                valor = self.preco * self.quantidade,
+                valor = round(self.preco * self.quantidade + self.corretagem, 2),
                 fundo = self.fundo,
                 data = self.data_operacao,
-                content_object = self
+                content_object = self,
+                objeto_movimentacao = self.ativo
             )
             acao_movimentacao.save()
 
@@ -318,19 +372,69 @@ class BoletaRendaFixaOffshore(models.Model):
     data_operacao = models.DateField(default=datetime.date.today, null=False)
     data_liquidacao = models.DateField(default=datetime.date.today, null=False)
     corretora = models.ForeignKey('fundo.Corretora', null=False, on_delete=models.PROTECT)
+    corretagem = models.DecimalField(max_digits=8, decimal_places=2)
     fundo = models.ForeignKey('fundo.Fundo', null=False, on_delete=models.PROTECT)
     operacao = models.CharField('Compra/Venda', max_length=1, choices=OPERACAO)
-    quantidade = models.DecimalField(max_digits=10, decimal_places=2)
-    nominal = models.DecimalField(max_digits=13, decimal_places=6)
-    taxa = models.DecimalField(max_digits=6, decimal_places=4)
-    preco = models.DecimalField(max_digits=10, decimal_places=8)
+    quantidade = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
+    nominal = models.DecimalField(max_digits=13, decimal_places=6, blank=True, null=True)
+    taxa = models.DecimalField(max_digits=6, decimal_places=4, blank=True, null=True)
+    preco = models.DecimalField(max_digits=10, decimal_places=8, blank=True, null=True)
     # Caixa que será afetado pela operação
     caixa_alvo = models.ForeignKey('ativos.Caixa', null=False, on_delete=models.PROTECT)
 
+    # Relações genéricas que permitem ligar a boleta de renda fixa offshore à
+    # boletas de provisão, CPR, quantidade e movimentação.
     boleta_provisao = GenericRelation('BoletaProvisao', related_query_name='provisao')
     boleta_CPR = GenericRelation('BoletaCPR', related_query_name='CPR')
     relacao_quantidade = GenericRelation(Quantidade, related_query_name='qtd_rfoff')
     relacao_movimentacao = GenericRelation(Movimentacao, related_query_name='mov_rfoff')
+
+    def clean_data_liquidacao(self):
+        """
+        Valida a data de liquidação da boleta.
+        """
+        if self.data_liquidacao < self.data_operacao:
+            raise ValidationError(_("Data de liquidação inválida. Insira uma data maior ou igual à data de operação."))
+
+    def clean_quantidade(self):
+        """
+        Alinha a quantidade do ativo com a operação. Em operação de compra,
+        a quantidade deve ser positiva. Em operação de venda, a quantidade
+        deve ser negativa.
+        """
+        if self.operacao == "C":
+            self.quantidade = abs(self.quantidade)
+        elif self.operacao == "V":
+            self.quantidade = -abs(self.quantidade)
+
+    def clean_preco(self):
+        """
+        Verifica se o preço não é um valor negativo
+        """
+        if self.preco < 0:
+            raise ValidationError(_("Preço inválido, insira um valor positivo para o preço."))
+
+    def criar_movimentacao(self):
+        """
+        Cria uma movimentação do ativo relacionada a essa boleta, apenas se
+        a boleta não possuir nenhuma movimentação ligada a ela
+        """
+        if self.relacao_movimentacao.all().exists() == False:
+            ativo_movimentacao = fm.Movimentacao(
+                valor = round(self.quantidade * self.preco + self.corretagem, 2),
+                fundo = self.fundo,
+                data = self.data_operacao,
+                content_object = self,
+                objeto_movimentacao = self.ativo
+            )
+            ativo_movimentacao.save()
+
+    def criar_quantidade(self):
+        """
+        Uma quantidade do ativo é criada para movimentar a quantidade de ativos na carteira.
+        """"
+        if self.relacao_quantidade.all().exists() == False:
+            pass
 
 class BoletaFundoLocal(models.Model):
     """

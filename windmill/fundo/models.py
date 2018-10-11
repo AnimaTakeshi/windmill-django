@@ -165,24 +165,32 @@ class Corretora(models.Model):
         """
         Retorna o total de taxas para um trade de ações
         """
+        return self.calcular_rebate(financeiro, quantidade) + \
+            self.calcular_corretagem(financeiro, quantidade) + \
+            self.calcular_emolumentos(financeiro, quantidade) - \
+            abs(self.corretagem_por_acao*quantidade)
 
     def calcular_corretagem(self, financeiro, quantidade):
         """
         Calcula a corretagem de um trade de ações.
         """
-        return -self.taxa_corretagem/100*abs(financeiro) - self.corretagem_por_acao*abs(quantidade)
+        corretagem = -self.taxa_corretagem/100*abs(financeiro) - abs(self.taxa_fixa)
+        if self.taxa_minima != 0:
+            if abs(corretagem) < abs(self.taxa_minima):
+                corretagem = -abs(self.taxa_minima)
+        return corretagem
 
     def calcular_emolumentos(self, financeiro):
         """
         Calcula os emolumentos de um trade de ações.
         """
-        return -abs(financeiro)*self.emolumentos/100
+        return -abs(financeiro)*abs(self.emolumentos)/100
 
-    def calcular_rebate(self, financeiro):
+    def calcular_rebate(self, financeiro, quantidade):
         """
         Calcula o rebate que é devolvido ao gestor.
         """
-        return -abs
+        return abs((1-self.rebate/100)*self.calcular_corretagem(financeiro, quantidade))
 
 class Custodiante(models.Model):
     """
@@ -282,8 +290,6 @@ class Quantidade(models.Model):
 
     def __str__(self):
         return '%s' % (self.content_object.__str__())
-
-
 
 class Movimentacao(models.Model):
     """

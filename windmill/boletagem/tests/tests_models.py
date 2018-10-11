@@ -42,7 +42,7 @@ class BoletaEmprestimoUnitTests(TestCase):
             taxa=decimal.Decimal(0.15))
         self.boleta_renovada_parcial = mommy.make('boletagem.BoletaEmprestimo',
             data_operacao='2018-10-01',
-            data_vencimento='2018-10-31',
+            data_vencimento='2018-10-24',
             quantidade=1000,
             preco=decimal.Decimal(10),
             taxa=decimal.Decimal(0.15))
@@ -56,7 +56,7 @@ class BoletaEmprestimoUnitTests(TestCase):
             taxa=decimal.Decimal(0.15))
         self.boleta_a_liquidar_parcial = mommy.make('boletagem.BoletaEmprestimo',
             data_operacao=datetime.date(year=2018, month=10, day=1),
-            data_reversao=datetime.date(year=2018, month=10, day=2),
+            data_reversao=datetime.date(year=2018, month=10, day=5),
             data_vencimento=datetime.date(year=2018, month=11, day=30),
             quantidade=15000,
             preco=decimal.Decimal(10),
@@ -68,10 +68,10 @@ class BoletaEmprestimoUnitTests(TestCase):
         self.boleta_liquidacao_anterior_operacao = mommy.make('boletagem.BoletaEmprestimo',
             data_liquidacao=datetime.date(year=2018, month=10, day=1),
             data_operacao=datetime.date(year=2018, month=10, day=3),
-            data_vencimento=datetime.date(year=2018, month=10, day=30))
+            data_vencimento=datetime.date(year=2018, month=10, day=24))
         self.boleta_liquidacao_posterior_vencimento = mommy.make('boletagem.BoletaEmprestimo',
             data_vencimento=datetime.date(year=2018, month=10, day=1),
-            data_liquidacao=datetime.date(year=2018, month=10, day=3))
+            data_liquidacao=datetime.date(year=2018, month=10, day=4))
         self.boleta_liquidacao_anterior_reversivel = mommy.make('boletagem.BoletaEmprestimo',
             data_liquidacao=datetime.date(year=2018, month=10, day=1),
             data_reversao=datetime.date(year=2018, month=10, day=3),
@@ -353,7 +353,6 @@ class BoletaAcaoUnitTests(TestCase):
     """
     Classe de testes para o modelo BoletaAcao.
     """
-
     def setUp(self):
         self.boleta = mommy.make('boletagem.BoletaAcao',
             data_operacao=datetime.date(year=2018, month=10, day=2),
@@ -370,15 +369,340 @@ class BoletaAcaoUnitTests(TestCase):
         self.boleta.data_liquidacao = self.boleta.data_operacao - datetime.timedelta(days=2)
         self.assertRaises(ValidationError, self.boleta.clean_data_liquidacao)
 
-    def test_clean_quantidade(self):
+    def test_operacao_quantidade_alinhados(self):
         """
         Testa a validação do campo quantidade.
         """
-        self.boleta.id = None
-        self.boleta.operacao = 'V'
-        self.assertRaises(ValidationError, self.boleta.clean_quantidade)
-        self.boleta.operacao = 'C'
-        self.boleta.quantidade = -100
-        self.assertRaises(ValidationError, self.boleta.clean_quantidade)
+        boleta_copia = self.boleta
+        boleta_copia.id = None
+        boleta_copia.operacao = 'V'
+        boleta_copia.quantidade = 1000
+        boleta_copia.clean_quantidade()
+        self.assertEqual(-1000, boleta_copia.quantidade)
+        self.assertEqual('V', boleta_copia.operacao)
+        boleta_copia.operacao = 'C'
+        boleta_copia.quantidade = -1000
+        boleta_copia.clean_quantidade()
+        self.assertEqual(1000, boleta_copia.quantidade)
+        self.assertEqual('C', boleta_copia.operacao)
 
-        self.assertLess
+    def test_clean_preco(self):
+        copia = self.boleta
+        copia.id = None
+        preco_negativo = -10
+        copia.preco = preco_negativo
+        copia.clean_preco()
+        self.assertEqual(copia.preco, -preco_negativo)
+
+    def test_criar_movimentacao(self):
+        """
+        Testa se a função de criação de movimentação cria uma movimentação para
+        uma boleta.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+        # Primeiro, não deve haver nenhuma movimentação já ligada à boleta
+        self.assertFalse(copia.relacao_movimentacao.all().exists())
+        copia.criar_movimentacao()
+        # Agora há uma movimentação ligada.
+        self.assertTrue(copia.relacao_movimentacao.all().exists())
+        type = ContentType.objects.get_for_model(copia)
+        movs = fm.Movimentacao.objects.get(content_type__pk=type.id, object_id=copia.id)
+        # Encontra a movimentação ligada à boleta
+        self.assertIsInstance(movs, fm.Movimentacao)
+        # As características da boleta devem bater com a movimentação
+        self.assertEqual(movs.valor, copia.preco * copia.quantidade + copia.corretagem)
+        self.assertEqual(movs.fundo, copia.fundo)
+        # Data de movimentação do ativo casa com a data de operação
+        self.assertEqual(movs.data, copia.data_operacao)
+        self.assertEqual(movs.objeto_movimentacao, copia.acao)
+
+    def test_criar_quantidade(self):
+        """
+        Testa se a função de criação de quantidade cria uma quantidade para
+        uma boleta.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+        # Primeiro, não deve haver nenhuma movimentação já ligada à boleta
+        self.assertFalse(copia.relacao_quantidade.all().exists())
+        copia.criar_quantidade()
+        # Agora há uma movimentação ligada.
+        self.assertTrue(copia.relacao_quantidade.all().exists())
+        type = ContentType.objects.get_for_model(copia)
+        qtd = fm.Quantidade.objects.get(content_type__pk=type.id, object_id=copia.id)
+        # Encontra a movimentação ligada à boleta
+        self.assertIsInstance(qtd, fm.Quantidade)
+        # As características da boleta devem bater com a movimentação
+        self.assertEqual(qtd.qtd, copia.quantidade)
+        self.assertEqual(qtd.fundo, copia.fundo)
+        # Data de movimentação do ativo casa com a data de operação
+        self.assertEqual(qtd.data, copia.data_operacao)
+        self.assertEqual(qtd.objeto_quantidade, copia.acao)
+
+    def test_criar_boleta_CPR(self):
+        """
+        Testa a criação de uma boleta de CPR ligada à boleta de Ação
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+        # Primeiro, não deve haver nenhuma movimentação já ligada à boleta
+        self.assertFalse(copia.boleta_CPR.all().exists())
+        copia.criar_boleta_CPR()
+        # Agora há uma movimentação ligada.
+        self.assertTrue(copia.boleta_CPR.all().exists())
+        type = ContentType.objects.get_for_model(copia)
+        CPR = bm.BoletaCPR.objects.get(content_type__pk=type.id, object_id=copia.id)
+        # Encontra a movimentação ligada à boleta
+        self.assertIsInstance(CPR, bm.BoletaCPR)
+        # As características da boleta devem bater com a movimentação
+        self.assertEqual(CPR.valor_cheio, - copia.quantidade*copia.preco + copia.corretagem)
+        self.assertEqual(CPR.data_inicio, copia.data_operacao)
+        self.assertEqual(CPR.data_pagamento, copia.data_liquidacao)
+        self.assertEqual(CPR.fundo, copia.fundo)
+        self.assertEqual(CPR.content_object, copia)
+
+    def test_criar_provisao(self):
+        """
+        Testa se a boleta de provisão é criada.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+        # Primeiro, não deve haver nenhuma movimentação já ligada à boleta
+        self.assertFalse(copia.boleta_provisao.all().exists())
+        copia.criar_boleta_provisao()
+        # Agora há uma movimentação ligada.
+        self.assertTrue(copia.boleta_provisao.all().exists())
+        type = ContentType.objects.get_for_model(copia)
+        provisao = bm.BoletaProvisao.objects.get(content_type__pk=type.id, object_id=copia.id)
+        # Encontra a movimentação ligada à boleta
+        self.assertIsInstance(provisao, bm.BoletaProvisao)
+        # As características da boleta devem bater com a movimentação
+        self.assertEqual(provisao.caixa_alvo, copia.caixa_alvo)
+        self.assertEqual(provisao.financeiro, - (copia.quantidade*copia.preco) + copia.corretagem)
+        self.assertEqual(provisao.data_pagamento, copia.data_liquidacao)
+        self.assertEqual(provisao.fundo, copia.fundo)
+        self.assertEqual(provisao.content_object, copia)
+
+class BoletaRendaFixaLocalUnitTest(TestCase):
+    """
+    Classe de Unit Test de BoletaRendaFixaLocal
+    """
+    def setUp(self):
+        self.boleta = mommy.make('boletagem.BoletaRendaFixaLocal',
+            data_operacao=datetime.date(year=2018, month=10, day=8),
+            data_liquidacao=datetime.date(year=2018, month=10, day=9),
+            operacao='C',
+            quantidade=1000,
+            preco=decimal.Decimal(9733.787491),
+            taxa=6.4
+        )
+
+    def test_clean_data_liquidacao(self):
+        copia = self.boleta
+        copia.id = None
+        copia.data_liquidacao = copia.data_operacao - datetime.timedelta(days=1)
+        copia.save()
+        self.assertRaises(ValidationError, copia.clean_data_liquidacao)
+
+    def test_alinha_operacao_quantidade(self):
+        """
+        Testa a validação do campo quantidade.
+        """
+        boleta_copia = self.boleta
+        boleta_copia.id = None
+        boleta_copia.operacao = 'V'
+        boleta_copia.quantidade = 1000
+        boleta_copia.clean_quantidade()
+        self.assertEqual(-1000, boleta_copia.quantidade)
+        self.assertEqual('V', boleta_copia.operacao)
+        boleta_copia.operacao = 'C'
+        boleta_copia.quantidade = -1000
+        boleta_copia.clean_quantidade()
+        self.assertEqual(1000, boleta_copia.quantidade)
+        self.assertEqual('C', boleta_copia.operacao)
+
+    def test_clean_preco(self):
+        copia = self.boleta
+        copia.id = None
+        copia.preco = -10
+        self.assertRaises(ValidationError, copia.clean_preco)
+
+    def test_cria_movimentacao(self):
+        """
+        Testa se o método cria_movimentacao cria uma movimentação do ativo.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+        self.assertFalse(copia.relacao_movimentacao.all().exists())
+        copia.criar_movimentacao()
+        self.assertTrue(copia.relacao_movimentacao.all().exists())
+        tipo = ContentType.objects.get_for_model(copia)
+        mov = fm.Movimentacao.objects.get(content_type__pk=tipo.id, object_id=copia.id)
+
+        self.assertIsInstance(mov, fm.Movimentacao)
+        self.assertEqual(mov.valor, round(copia.quantidade * copia.preco + copia.corretagem, 2))
+        self.assertEqual(mov.fundo, copia.fundo)
+        self.assertEqual(mov.data, copia.data_operacao)
+        self.assertEqual(mov.content_object, copia)
+        self.assertEqual(mov.objeto_movimentacao, copia.ativo)
+
+    def test_cria_quantidade(self):
+        """
+        Testa se o método cria_quantidade cria uma quantidade do ativo.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+        self.assertFalse(copia.relacao_quantidade.all().exists())
+        copia.criar_quantidade()
+        self.assertTrue(copia.relacao_quantidade.all().exists())
+
+        tipo = ContentType.objects.get_for_model(copia)
+        qtd = fm.Quantidade.objects.get(content_type__pk=tipo.id, object_id=copia.id)
+
+        self.assertIsInstance(qtd, fm.Quantidade)
+        self.assertEqual(qtd.qtd, copia.quantidade)
+        self.assertEqual(qtd.fundo, copia.fundo)
+        self.assertEqual(qtd.data, copia.data_operacao)
+        self.assertEqual(qtd.content_object, copia)
+        self.assertEqual(qtd.objeto_quantidade, copia.ativo)
+
+    def test_criar_boleta_CPR(self):
+        """
+        Testa se a boleta de renda fixa local gera a boleta de CPR corerspondente
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+        self.assertFalse(copia.boleta_CPR.all().exists())
+        copia.criar_boleta_CPR()
+        self.assertTrue(copia.boleta_CPR.all().exists())
+
+        tipo = ContentType.objects.get_for_model(copia)
+        cpr = bm.BoletaCPR.objects.get(content_type__pk=tipo.id, object_id=copia.id)
+
+        self.assertIsInstance(cpr, bm.BoletaCPR)
+        self.assertEqual(cpr.fundo, copia.fundo)
+        self.assertEqual(cpr.data_inicio, copia.data_operacao)
+        self.assertEqual(cpr.data_pagamento, copia.data_liquidacao)
+        self.assertEqual(cpr.content_object, copia)
+
+    def test_criar_provisao(self):
+        """
+        Testa se a boleta de provisão é criada corretamente.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+        self.assertFalse(copia.boleta_provisao.all().exists())
+        copia.criar_boleta_provisao()
+        self.assertTrue(copia.boleta_provisao.all().exists())
+
+        tipo = ContentType.objects.get_for_model(copia)
+        provisao = bm.BoletaProvisao.objects.get(content_type__pk=tipo.id, object_id=copia.id)
+
+        self.assertIsInstance(provisao, bm.BoletaProvisao)
+        self.assertEqual(provisao.financeiro, round(-(copia.preco*copia.quantidade) + copia.corretagem,2))
+
+class BoletaRendaFixaOffshoreUnitTest(TestCase):
+    """
+    Classe de Unit Test de BoletaRendaFixaOffshore
+    """
+    def setUp(self):
+        self.boleta = mommy.make('boletagem.BoletaRendaFixaOffshore',
+            data_operacao=datetime.date(year=2018, month=10, day=8),
+            data_liquidacao=datetime.date(year=2018, month=10, day=9),
+            operacao='C',
+            quantidade=1000,
+            preco=decimal.Decimal(0.994594),
+            taxa=2.133
+        )
+
+    def test_clean_data_liquidacao(self):
+        """
+        Testa o método de validação da data de liquidação da boleta.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.data_liquidacao = copia.data_operacao - datetime.timedelta(days=1)
+        self.assertRaises(ValidationError, self.boleta.clean_data_liquidacao)
+
+    def test_clean_operacao_quantidade(self):
+        """
+        Testa se o método de validação de quantidade alinha corretamente
+        o valor da quantidade com a operação. Em operações de compra, a
+        quantidade deve ser um valor positivo, e, em operações de venda,
+        o valor deve ser negativo.
+        """
+        copia = self.boleta
+        copia.id = None
+        self.assertEqual(copia.operacao, "C")
+        self.assertGreater(copia.quantidade, 0)
+        # Boleta a quantidade como negativa.
+        copia.quantidade = -copia.quantidade
+        # Método clean deve corrigir a quantidade para alinhar com a operação.
+        copia.clean_quantidade()
+        self.assertEqual(copia.operacao, "C")
+        self.assertGreater(copia.quantidade, 0)
+
+        copia.operacao = "V"
+        # Método clean deve corrigir a quanidade para alinhar com a operação
+        copia.clean_quantidade()
+        self.assertEqual(copia.operacao, "V")
+        self.assertLess(copia.quantidade, 0)
+
+    def test_clean_preco(self):
+        """
+        Testa a validação do preço da boleta
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.preco = -abs(copia.preco)
+        self.assertRaises(ValidationError, copia.clean_preco)
+
+    def test_cria_movimentacao(self):
+        """
+        Testa se o método cria_movimentacao cria uma movimentação do ativo.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+        self.assertFalse(copia.relacao_movimentacao.all().exists())
+        copia.criar_movimentacao()
+        self.assertTrue(copia.relacao_movimentacao.all().exists())
+        tipo = ContentType.objects.get_for_model(copia)
+        mov = fm.Movimentacao.objects.get(content_type__pk=tipo.id, object_id=copia.id)
+
+        self.assertIsInstance(mov, fm.Movimentacao)
+        self.assertEqual(mov.valor, round(copia.quantidade * copia.preco + copia.corretagem, 2))
+        self.assertEqual(mov.fundo, copia.fundo)
+        self.assertEqual(mov.data, copia.data_operacao)
+        self.assertEqual(mov.content_object, copia)
+        self.assertEqual(mov.objeto_movimentacao, copia.ativo)
+
+    def test_cria_quantidade(self):
+        """
+        Testa se o método cria_quantidade cria uma quantidade do ativo.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+        self.assertFalse(copia.relacao_quantidade.all().exists())
+        copia.criar_quantidade()
+        self.assertTrue(copia.relacao_quantidade.all().exists())
+
+        tipo = ContentType.objects.get_for_model(copia)
+        qtd = fm.Quantidade.objects.get(content_type__pk=tipo.id, object_id=copia.id)
+
+        self.assertIsInstance(qtd, fm.Quantidade)
+        self.assertEqual(qtd.qtd, copia.quantidade)
+        self.assertEqual(qtd.fundo, copia.fundo)
+        self.assertEqual(qtd.data, copia.data_operacao)
+        self.assertEqual(qtd.content_object, copia)
+        self.assertEqual(qtd.objeto_quantidade, copia.ativo)
