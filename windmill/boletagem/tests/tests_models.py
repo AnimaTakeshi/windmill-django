@@ -57,7 +57,7 @@ class BoletaEmprestimoUnitTests(TestCase):
         self.boleta_a_liquidar_parcial = mommy.make('boletagem.BoletaEmprestimo',
             data_operacao=datetime.date(year=2018, month=10, day=1),
             data_reversao=datetime.date(year=2018, month=10, day=5),
-            data_vencimento=datetime.date(year=2018, month=11, day=30),
+            data_vencimento=datetime.date(year=2018, month=12, day=25),
             quantidade=15000,
             preco=decimal.Decimal(10),
             taxa=decimal.Decimal(0.15),
@@ -71,7 +71,7 @@ class BoletaEmprestimoUnitTests(TestCase):
             data_vencimento=datetime.date(year=2018, month=10, day=24))
         self.boleta_liquidacao_posterior_vencimento = mommy.make('boletagem.BoletaEmprestimo',
             data_vencimento=datetime.date(year=2018, month=10, day=1),
-            data_liquidacao=datetime.date(year=2018, month=10, day=4))
+            data_liquidacao=datetime.date(year=2018, month=10, day=13))
         self.boleta_liquidacao_anterior_reversivel = mommy.make('boletagem.BoletaEmprestimo',
             data_liquidacao=datetime.date(year=2018, month=10, day=1),
             data_reversao=datetime.date(year=2018, month=10, day=3),
@@ -706,3 +706,156 @@ class BoletaRendaFixaOffshoreUnitTest(TestCase):
         self.assertEqual(qtd.data, copia.data_operacao)
         self.assertEqual(qtd.content_object, copia)
         self.assertEqual(qtd.objeto_quantidade, copia.ativo)
+
+    def test_criar_boleta_CPR(self):
+        """
+        Testa se a boleta de renda fixa local gera a boleta de CPR corerspondente
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+        self.assertFalse(copia.boleta_CPR.all().exists())
+        copia.criar_boleta_CPR()
+        self.assertTrue(copia.boleta_CPR.all().exists())
+
+        tipo = ContentType.objects.get_for_model(copia)
+        cpr = bm.BoletaCPR.objects.get(content_type__pk=tipo.id, object_id=copia.id)
+
+        self.assertIsInstance(cpr, bm.BoletaCPR)
+        self.assertEqual(cpr.fundo, copia.fundo)
+        self.assertEqual(cpr.data_inicio, copia.data_operacao)
+        self.assertEqual(cpr.data_pagamento, copia.data_liquidacao)
+        self.assertEqual(cpr.content_object, copia)
+
+    def test_criar_provisao(self):
+        """
+        Testa se a boleta de provisão é criada corretamente.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+        self.assertFalse(copia.boleta_provisao.all().exists())
+        copia.criar_boleta_provisao()
+        self.assertTrue(copia.boleta_provisao.all().exists())
+
+        tipo = ContentType.objects.get_for_model(copia)
+        provisao = bm.BoletaProvisao.objects.get(content_type__pk=tipo.id, object_id=copia.id)
+
+        self.assertIsInstance(provisao, bm.BoletaProvisao)
+        self.assertEqual(provisao.financeiro, round(-(copia.preco*copia.quantidade) + copia.corretagem,2))
+
+class BoletaFundoLocalUnitTest(TestCase):
+    """
+    Classe de Unit Test de BoletaFundoLocal
+    """
+    def setUp(self):
+        self.boleta = mommy.make('boletagem.BoletaFundoLocal',
+            data_operacao=datetime.date(year=2018, month=10, day=15),
+            data_cotizacao=datetime.date(year=2018, month=10, day=16),
+            data_liquidacao=datetime.date(year=2018, month=10, day=16),
+            operacao="Aplicação",
+            quantidade=1000,
+            preco=1300
+            )
+
+    def test_clean_financeiro_sem_quantidade_validation_exception(self):
+        """
+        Testa o método de validação do campo financeiro. Testa se a validação
+        levanta uma exceção quando o financeiro está em branco, assim como a
+        quantidade.
+        """
+        # Preenche boleta com
+        copia = self.boleta
+        copia.id = None
+        copia.quantidade = None
+        copia.financeiro = None
+        self.assertRaises(ValidationError, copia.clean_financeiro)
+
+    def test_clean_financeiro_calcula_financeiro(self):
+        """
+        Testa o método de validação do campo financeiro. Caso a quantidade
+        e preço estejam preenchidos, o financeiro é calculado.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.financeiro = None
+        copia.preco = 1200
+        copia.clean_financeiro()
+        self.assertEqual(copia.financeiro, copia.preco * copia.quantidade)
+
+    def test_clean_data_liquidacao_validation_error(self):
+        """
+        Testa a validação da data de liquidação. Ela deve ser menor ou igual
+        à data de operação
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.data_liquidacao = copia.data_operacao - datetime.timedelta(days=1)
+        self.assertRaises(ValidationError, copia.clean_data_liquidacao)
+
+    def test_clean_data_cotizacao_validation_error_data_operacao(self):
+        """
+        Testa a validação da data de cotização. Ela deve ser menor ou igual
+        à data de operação
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.data_cotizacao = copia.data_operacao - datetime.timedelta(days=1)
+        self.assertRaises(ValidationError, copia.clean_data_cotizacao)
+
+    def test_clean_data_cotizacao_validation_error_resgate(self):
+        """
+        Testa a validação da data de cotização. Se a operação for de resgate,
+        a data de cotização deve ser menor ou igual que a data de liquidação.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.operacao = "Resgate"
+        copia.data_liquidacao = copia.data_cotizacao - datetime.timedelta(days=1)
+        self.assertRaises(ValidationError, copia.clean_data_cotizacao)
+        copia.operacao = "Resgate total"
+        self.assertRaises(ValidationError, copia.clean_data_cotizacao)
+
+    def test_alinhamento_operacao_quantidade(self):
+        """
+        Testa se a a função clean corrige o alinhamento de operação
+        e quantidade.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.operacao = "Resgate"
+        copia.quantidade = 1000
+        copia.clean_quantidade()
+        self.assertEqual(-1000, copia.quantidade)
+        self.assertEqual("Resgate", copia.operacao)
+        copia.operacao = "Aplicação"
+        copia.quantidade = -1000
+        copia.clean_quantidade()
+        self.assertEqual(1000, copia.quantidade)
+        self.assertEqual("Aplicação", copia.operacao)
+
+    def test_cria_movimentacao(self):
+        """
+        Testa se a boleta gera movimentação corretamente.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+        self.assertFalse(copia.relacao_movimentacao.all().exists())
+        copia.criar_movimentacao()
+        self.assertTrue(copia.relacao_movimentacao.all().exists())
+        tipo = ContentType.objects.get_for_model(copia)
+        mov = fm.Movimentacao.objects.get(content_type__pk=tipo.id, object_id=copia.id)
+
+        self.assertIsInstance(mov, fm.Movimentacao)
+        self.assertEqual(mov.valor, round(copia.financeiro, 2))
+        self.assertEqual(mov.fundo, copia.fundo)
+        self.assertEqual(mov.data, copia.data_cotizacao)
+        self.assertEqual(mov.content_object, copia)
+        self.assertEqual(mov.objeto_movimentacao, copia.ativo)
+
+    @pytest.mark.xfail
+    def test_cria_quantidade(self):
+        """
+        Testa se a boleta cria quantidades corretamente.
+        """

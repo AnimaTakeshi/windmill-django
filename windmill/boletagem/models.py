@@ -427,14 +427,72 @@ class BoletaRendaFixaOffshore(models.Model):
                 content_object = self,
                 objeto_movimentacao = self.ativo
             )
+            ativo_movimentacao.clean()
             ativo_movimentacao.save()
 
     def criar_quantidade(self):
         """
         Uma quantidade do ativo é criada para movimentar a quantidade de ativos na carteira.
-        """"
+        """
         if self.relacao_quantidade.all().exists() == False:
-            pass
+            self.clean_quantidade()
+            ativo_quantidade = fm.Quantidade(
+                qtd = self.quantidade,
+                fundo = self.fundo,
+                data = self.data_operacao,
+                content_object = self,
+                objeto_quantidade = self.ativo
+            )
+            ativo_quantidade.clean()
+            ativo_quantidade.save()
+
+    def criar_boleta_CPR(self):
+        """
+        É criado um CPR para o trade.
+        """
+        # Checar se há boleta de CPR já criada:
+        if self.boleta_CPR.all().exists() == False:
+            # Criar boleta de CPR
+            op = ''
+            if self.operacao == "C":
+                op = 'Compra '
+            else:
+                op = 'Venda '
+            boleta_CPR = BoletaCPR(
+                descricao = op + self.ativo.nome,
+                valor_cheio = -(self.preco * self.quantidade) + self.corretagem,
+                data_inicio = self.data_operacao,
+                data_pagamento = self.data_liquidacao,
+                fundo = self.fundo,
+                content_object = self
+            )
+            boleta_CPR.save()
+
+    def criar_boleta_provisao(self):
+        """
+        Cria uma boleta de provisão de acordo com os parâmeteros da boleta
+        de ação. Se já houver uma boleta de provisão criada, não há necessidade
+        de criar outra.
+        """
+        # Checar se já há boleta de provisão criada relacionada com esta.
+        if self.boleta_provisao.all().exists() == False:
+            op = ''
+            if self.operacao == "C":
+                op = 'Compra '
+            else:
+                op = 'Venda '
+            # Criar boleta de provisão
+            boleta_provisao = BoletaProvisao(
+                descricao = op + self.ativo.nome,
+                caixa_alvo = self.caixa_alvo,
+                fundo = self.fundo,
+                data_pagamento = self.data_liquidacao,
+                # A movimentação de caixa tem sinal oposto à variação de quantidade
+                financeiro = - (self.preco * self.quantidade) + self.corretagem,
+                content_object = self
+
+            )
+            boleta_provisao.save()
 
 class BoletaFundoLocal(models.Model):
     """
@@ -459,15 +517,72 @@ class BoletaFundoLocal(models.Model):
     fundo = models.ForeignKey('fundo.Fundo', on_delete=models.PROTECT)
     operacao = models.CharField(max_length=13, choices=OPERACAO)
     liquidacao = models.CharField(max_length=13, choices=TIPO_LIQUIDACAO)
-    financeiro = models.DecimalField(max_digits=16, decimal_places=6)
-    quantidade = models.DecimalField(max_digits=15, decimal_places=6)
-    preco = models.DecimalField(max_digits=15, decimal_places=6)
+    financeiro = models.DecimalField(max_digits=16, decimal_places=6, blank=True, null=True)
+    quantidade = models.DecimalField(max_digits=15, decimal_places=6, blank=True, null=True)
+    preco = models.DecimalField(max_digits=15, decimal_places=6, blank=True, null=True)
     caixa_alvo = models.ForeignKey('ativos.Caixa', null=False, on_delete=models.PROTECT)
 
     boleta_provisao = GenericRelation('BoletaProvisao', related_query_name='provisao')
     boleta_CPR = GenericRelation('BoletaCPR', related_query_name='CPR')
     relacao_quantidade = GenericRelation(Quantidade, related_query_name='qtd_fundo_local')
     relacao_movimentacao = GenericRelation(Movimentacao, related_query_name='mov_fundo_local')
+
+    def clean_financeiro(self):
+        """
+        Valida o campo financeiro. Caso quantidade e preço estejam preenchidos,
+        financeiro deve ser calculado como sendo igual a preço * quantidade.
+        Caso algum dos dois não esteja preenchido, financeiro deve estar.
+        """
+        if self.quantidade == None or self.preco == None:
+            if self.financeiro == None:
+                raise ValidationError(_("Informe o financeiro ou quantidade e preço."))
+        elif self.quantidade != None and self.preco != None:
+            self.financeiro = self.quantidade * self.preco
+
+    def clean_data_liquidacao(self):
+        """
+        Data de liquidação deve ser menor que data de operação.
+        """
+        if self.data_liquidacao < self.data_operacao:
+            raise ValidationError(_("Insira uma data de liquidação válida. Ela deve ser menor que data de operação."))
+
+    def clean_data_cotizacao(self):
+        """
+        Data de cotização deve ser menor que a data de operação. A data de cotização
+        deve ser menor ou igual à data de liquidação no caso de resgates.
+        """
+        if self.data_cotizacao < self.data_operacao:
+            raise ValidationError(_('Insira uma data de cotização válida. Ela deve ser menor que a data de operação.'))
+        if self.data_liquidacao < self.data_cotizacao and "Resgate" in self.operacao:
+            raise ValidationError(_('Insira uma data de cotização válida. Em caso de resgate, ela deve ser menor ou igual que a data de liquidação.'))
+
+    def clean_quantidade(self):
+        """
+        Alinha a quantidade com a operação.
+        """
+        if self.operacao == "Aplicação" and self.quantidade is not None:
+            self.quantidade = abs(self.quantidade)
+            self.clean_financeiro()
+        elif "Resgate" in self.operacao and self.quantidade is not None:
+            self.quantidade = -abs(self.quantidade)
+            self.clean_financeiro()
+
+    def criar_movimentacao(self):
+        """
+        Cria uma movimentação do ativo movimentado.
+        """
+        if self.relacao_movimentacao.all().exists() == False:
+            self.clean_financeiro()
+            mov = fm.Movimentacao(
+                valor=self.financeiro,
+                fundo=self.fundo,
+                data=self.data_cotizacao,
+                content_object=self,
+                objeto_movimentacao=self.ativo
+            )
+            mov.clean()
+            mov.save()
+
 
 class BoletaFundoOffshore(models.Model):
     """
