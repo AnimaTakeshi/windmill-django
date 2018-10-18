@@ -56,7 +56,7 @@ class Fundo(models.Model):
     # No caso dos fundos locais, como a carteira é diária, a taxa de
     # administração é acumulada diariamente, com base no PL do dia anterior.
     # No caso de fundos offshore, com carteiras mensais, a taxa é calculada
-    # mensalmente.
+    # mensalmente, com base no PL de fim do mês.
     capitalizacao_taxa_adm = models.CharField(max_length=15,
         choices=CAPITALIZACAO, null=True, blank=True)
     # Identificador de conta da corretora IB
@@ -97,6 +97,8 @@ class Gestora(models.Model):
     """
     nome = models.CharField(max_length=30)
     contato = GenericRelation('Contato')
+    # Indica qual gestora somos nós
+    anima = models.BooleanField(default=False)
 
     class Meta:
         ordering = ['nome']
@@ -262,6 +264,12 @@ class Vertice(models.Model):
     movimentacao = models.DecimalField(decimal_places=6, max_digits=20)
     data = models.DateField()
 
+    # O content_type pode ser tanto um ativo quanto um CPR
+    content_type = models.ForeignKey(ContentType, on_delete=models.PROTECT,
+        related_name='relacao_ativo')
+    object_id = models.PositiveIntegerField()
+    content_object = GenericForeignKey('content_type', 'object_id')
+
     class Meta:
         ordering = ['fundo']
         verbose_name_plural = 'Vértices'
@@ -338,6 +346,35 @@ class Cotista(models.Model):
     Armazena informações de cotistas dos fundos. Eles podem ser outros
     fundos ou pessoas.
     """
+    # Nome do cotista
+    nome = models.CharField(max_length=50)
+    # Número do documento de identificação - CPF/CNPJ
+    n_doc = models.CharField(max_length=20)
+    # Cota média é o parâmetero para o cálculo do imposto de renda do cotista.
+    # Ela é determinada pela média ponderada do valor da cota dos certificados
+    # de passivo pela quantidade de cotas ainda aplicada.
+    cota_media = models.DecimalField(max_digits=15, decimal_places=7)
+
+
+class CertificadoPassivo(models.Model):
+    """
+    A cada movimentação de passivo de fundo feita, um certificado passivo é
+    criado para registrar quantas cotas, valor financeiro, IR calculado,
+    é movimentado.
+    """
+    # Cotista que fez a movimentação de passivo.
+    cotista = models.ForeignKey('fundo.Cotista', on_delete=models.PROTECT)
+    # Quantidade de cotas que foram movimentadas.
+    qtd_cotas = models.DecimalField(max_digits=15, decimal_places=7)
+    # Valor da cota no momento da aplicação
+    valor_cota = models.DecimalField(max_digits=10, decimal_places=2)
+    # Quantidade de cotas desta série que ainda estão aplicadas.
+    # Conforme o cotista realiza resgates do fundo, cotas de certificados mais
+    # antigos são resgatadas, aumentando o valor da cota média.
+    cotas_aplicadas = models.DecimalField(max_digits=15, decimal_places=7)
+    # Boleta de passivo que registrou a movimentação
+    boleta_passivo = models.ForeignKey('boletagem.BoletaPassivo', on_delete=models.PROTECT)
+
 
 class CPR(models.Model):
     """
@@ -347,6 +384,7 @@ class CPR(models.Model):
     valor = models.DecimalField(max_digits=20, decimal_places=6)
     data = models.DateField()
     fundo = models.ForeignKey('fundo.Fundo', on_delete=models.PROTECT)
+    vertice = GenericRelation('fundo.Vertice')
 
     # Chave estrangeira para a boleta originadora do CPR, caso aplicável.
     content_type = models.ForeignKey(ContentType, on_delete=models.PROTECT,

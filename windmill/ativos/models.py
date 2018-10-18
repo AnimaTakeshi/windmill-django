@@ -98,6 +98,7 @@ class Caixa(Ativo):
     moeda = models.ForeignKey('Moeda', on_delete=models.PROTECT)
     zeragem = models.ForeignKey(Ativo, blank=True, null=True,
         on_delete=models.PROTECT, default=None, related_name='caixas')
+    custodia = models.ForeignKey('fundo.Custodiante', on_delete=models.PROTECT)
 
     class Meta:
         verbose_name_plural = "Caixas"
@@ -122,6 +123,10 @@ class Fundo_Local(Ativo):
 
 class Fundo_Offshore(Ativo):
 
+    data_cotizacao_resgate = models.DateField()
+    data_liquidacao_resgate = models.DateField()
+    data_cotizacao_aplicacao = models.DateField()
+    data_liquidacao_aplicacao = models.DateField()
     gerido = models.ForeignKey('fundo.Fundo', on_delete=models.PROTECT)
 
     class Meta:

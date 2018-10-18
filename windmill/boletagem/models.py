@@ -55,6 +55,7 @@ class BoletaAcao(models.Model):
     data_liquidacao = models.DateField(null=False)
     corretora = models.ForeignKey("fundo.Corretora", null=False, on_delete=models.PROTECT)
     corretagem = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    custodia = models.ForeignKey('fundo.Custodiante', null=False, on_delete=models.PROTECT)
     fundo = models.ForeignKey('fundo.Fundo', null=False, on_delete=models.PROTECT)
     operacao = models.CharField('Compra/Venda', max_length=1, choices=OPERACAO)
     quantidade = models.IntegerField()
@@ -91,8 +92,10 @@ class BoletaAcao(models.Model):
 
     def clean_preco(self):
         """
-        Não aceita preços negativos, apenas positivos
+        Não aceita preços negativos, apenas positivos. Converte o número do
+        preço para um decimal com 6 casas decimais de detalhe.
         """
+        self.preco = decimal.Decimal(self.preco).quantize(decimal.Decimal('1.000000'))
         if self.preco < 0 :
             self.preco = -self.preco
 
@@ -118,6 +121,17 @@ class BoletaAcao(models.Model):
         self.criar_quantidade()
         self.criar_movimentacao()
 
+    def fechado(self):
+        """
+        Determina se a boleta já foi fechada. Uma boleta é considerada fechada
+        quando a movimentação e quantidade do ativo já tiverem sido gerados,
+        assim como a boleta de CPR e provisão relacionadas.
+        """
+        return self.boleta_provisao.all().exists() and \
+            self.boleta_CPR.all().exists() and \
+            self.relacao_quantidade.all().exists() and \
+            self.relacao_movimentacao.all().exists()
+
     def criar_boleta_provisao(self):
         """
         Cria uma boleta de provisão de acordo com os parâmetros da boleta
@@ -141,6 +155,7 @@ class BoletaAcao(models.Model):
                 financeiro = - (self.preco * self.quantidade) + self.corretagem,
                 content_object = self
             )
+            boleta_provisao.full_clean()
             boleta_provisao.save()
 
     def criar_boleta_CPR(self):
@@ -165,6 +180,7 @@ class BoletaAcao(models.Model):
                 fundo = self.fundo,
                 content_object = self
             )
+            boleta_CPR.full_clean()
             boleta_CPR.save()
 
     def criar_quantidade(self):
@@ -183,6 +199,7 @@ class BoletaAcao(models.Model):
                 content_object = self,
                 objeto_quantidade = self.acao
             )
+            acao_quantidade.full_clean()
             acao_quantidade.save()
 
     def criar_movimentacao(self):
@@ -201,6 +218,7 @@ class BoletaAcao(models.Model):
                 content_object = self,
                 objeto_movimentacao = self.acao
             )
+            acao_movimentacao.full_clean()
             acao_movimentacao.save()
 
 class BoletaRendaFixaLocal(models.Model):
@@ -259,6 +277,7 @@ class BoletaRendaFixaLocal(models.Model):
             self.quantidade = -abs(self.quantidade)
 
     def clean_preco(self):
+        self.preco = decimal.Decimal(self.preco).quantize(decimal.Decimal('1.000000'))
         if self.preco < 0:
             raise ValidationError(_("Preço inválido, informe um preço de valor positivo."))
 
@@ -272,6 +291,17 @@ class BoletaRendaFixaLocal(models.Model):
         self.criar_boleta_CPR()
         self.criar_quantidade()
         self.criar_movimentacao()
+
+    def fechado(self):
+        """
+        Determina se a boleta já foi fechada. Uma boleta é considerada fechada
+        quando a movimentação e quantidade do ativo já tiverem sido gerados,
+        assim como a boleta de CPR e provisão relacionadas.
+        """
+        return self.boleta_provisao.all().exists() and \
+            self.boleta_CPR.all().exists() and \
+            self.relacao_quantidade.all().exists() and \
+            self.relacao_movimentacao.all().exists()
 
     def criar_boleta_provisao(self):
         """
@@ -377,7 +407,7 @@ class BoletaRendaFixaOffshore(models.Model):
     operacao = models.CharField('Compra/Venda', max_length=1, choices=OPERACAO)
     quantidade = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
     nominal = models.DecimalField(max_digits=13, decimal_places=6, blank=True, null=True)
-    taxa = models.DecimalField(max_digits=6, decimal_places=4, blank=True, null=True)
+    taxa = models.DecimalField(max_digits=8, decimal_places=6, blank=True, null=True)
     preco = models.DecimalField(max_digits=10, decimal_places=8, blank=True, null=True)
     # Caixa que será afetado pela operação
     caixa_alvo = models.ForeignKey('ativos.Caixa', null=False, on_delete=models.PROTECT)
@@ -411,8 +441,32 @@ class BoletaRendaFixaOffshore(models.Model):
         """
         Verifica se o preço não é um valor negativo
         """
+        self.preco = decimal.Decimal(self.preco).quantize(decimal.Decimal('1.000000'))
         if self.preco < 0:
             raise ValidationError(_("Preço inválido, insira um valor positivo para o preço."))
+
+    def clean_taxa(self):
+        """
+        Converte o número do preço para um decimal com 6 casas decimais de
+        detalhe.
+        """
+        self.taxa = decimal.Decimal(self.taxa).quantize(decimal.Decimal('1.000000'))
+
+    def fechar_boleta(self):
+        """
+        Verifica as informações da boleta e gera quantidade, movimentação,
+        boletas de CPR e provisão para a boleta.
+        """
+        self.criar_movimentacao()
+        self.criar_quantidade()
+        self.criar_boleta_CPR()
+        self.criar_boleta_provisao()
+
+    def fechado(self):
+        return self.boleta_provisao.all().exists() and \
+            self.boleta_CPR.all().exists() and \
+            self.relacao_quantidade.all().exists() and \
+            self.relacao_movimentacao.all().exists()
 
     def criar_movimentacao(self):
         """
@@ -567,6 +621,16 @@ class BoletaFundoLocal(models.Model):
             self.quantidade = -abs(self.quantidade)
             self.clean_financeiro()
 
+    def fechado(self):
+        """
+        Retorna True se houver boleta de provisão e CPR associadas a essa boleta,
+        assim como quantidade e movimento do ativo.
+        """
+        return self.boleta_provisao.all().exists() and \
+            self.boleta_CPR.all().exists() and \
+            self.relacao_quantidade.all().exists() and \
+            self.relacao_movimentacao.all().exists()
+
     def criar_movimentacao(self):
         """
         Cria uma movimentação do ativo movimentado.
@@ -583,11 +647,63 @@ class BoletaFundoLocal(models.Model):
             mov.clean()
             mov.save()
 
+    def criar_quantidade(self):
+        """
+        Cria a quantidade do ativo movimentado, caso a boleta já não tenha
+        criado.
+        """
+        # TODO: VERIFICAR SE O PREÇO DO ATIVO JÁ FOI INFORMADO PARA CRIAR
+        # A MOVIMENTAÇÃO.
+        if self.relacao_quantidade.all().exists() == False:
+            pass
+
+    def criar_boleta_CPR(self):
+        """
+        Cria a boleta de CPR da operação, caso já não tenha sido criada.
+        """
+        if self.boleta_CPR.all().exists() == False:
+            # Clean na data de cotização para verificar se está tudo certo.
+            self.full_clean()
+            if self.data_cotizacao < self.data_liquidacao:
+                cpr = BoletaCPR(
+                    descricao = self.operacao + " " + self.ativo.nome,
+                    valor_cheio = self.financeiro,
+                    data_inicio = self.data_cotizacao,
+                    data_pagamento = self.data_liquidacao,
+                    fundo = self.fundo,
+                    content_object = self
+                )
+                cpr.save()
+            else:
+                cpr = BoletaCPR(
+                    descricao = self.operacao + " " + self.ativo.nome,
+                    valor_cheio = self.financeiro,
+                    data_inicio = self.data_liquidacao,
+                    data_pagamento = self.data_cotizacao,
+                    fundo = self.fundo,
+                    content_object = self
+                )
+                cpr.save()
+
+    def criar_boleta_provisao(self):
+        pass
 
 class BoletaFundoOffshore(models.Model):
     """
     Representa uma operação de cotas de fundo offshore. Processado de acordo
     com o seu estado atual.
+    A cada fechamento de dia, verifica se o preço para a cotização do ativo
+    está disponível. Caso esteja disponível, cria a movimentação e quantidade
+    do ativo.
+    Quantidade e movimentação devem ser gerados quando as informações de
+    cotização estão disponíveis, para que seja possível casar a variação
+    de quantidade com a movimentação.
+    """
+
+    """
+    O estado da boleta é atualizado automaticamente, conforme a boleta é
+    fechada dia a dia. A cada fechamento, deve ser verificado se houve
+    divulgação do valor da cota, ou se houve liquidação da movimentação.
     """
     ESTADO = (
         ('Pendente de Cotização', 'Pendente de Cotização'),
@@ -598,17 +714,111 @@ class BoletaFundoOffshore(models.Model):
         ('Pendente de Liquidação e Cotização','Pendente de Liquidação e Cotização'),
         ('Concluído', 'Concluído')
     )
+    OPERACAO = (
+        ('Aplicação', 'Aplicação'),
+        ('Resgate', 'Resgate'),
+        ('Resgate Total', 'Resgate Total')
+    )
 
     ativo = models.ForeignKey('ativos.Fundo_Offshore', on_delete=models.PROTECT)
-    estado = models.CharField(max_length=48)
+    estado = models.CharField(max_length=48, choices=ESTADO)
     data_operacao = models.DateField(default=datetime.date.today)
     data_cotizacao = models.DateField()
     data_liquidacao = models.DateField()
+    financeiro = models.DecimalField(max_digits=16, decimal_places=6, blank=True, null=True)
+    preco = models.DecimalField(max_digits=15, decimal_places=6, blank=True, null=True)
+    quantidade = models.DecimalField(max_digits=15, decimal_places=6, blank=True, null=True)
+    operacao = models.CharField(max_length=13, choices=OPERACAO)
+    caixa_alvo = models.ForeignKey('ativos.Caixa', on_delete=models.PROTECT)
 
     boleta_provisao = GenericRelation('BoletaProvisao', related_query_name='provisao')
     boleta_CPR = GenericRelation('BoletaCPR', related_query_name='CPR')
     relacao_quantidade = GenericRelation(Quantidade, related_query_name='qtd_fundo_off')
     relacao_movimentacao = GenericRelation(Movimentacao, related_query_name='mov_fundo_off')
+
+    def clean_quantidade(self):
+        """
+        Valida o campo quantidade. Alinha o valor do campo com a operação
+        realizada
+        """
+        if "Resgate" in self.operacao:
+            self.quantidade = -abs(self.quantidade)
+        else:
+            self.quantidade = abs(self.quantidade)
+
+    def fechado(self):
+        """
+        Determina se a boleta já foi fechada ou não.
+        """
+        if self.estado == "Concluído":
+            return True
+        else:
+            return False
+
+    def fechar_boleta(self):
+        """
+        O fechamento deve pegar apenas as boletas que possuem o campo 'fechada'
+        como Falso.
+        Ao fazer o fechamento, devemos avaliar os seguintes casos:
+        A boleta de provisão para a liquidação da movimentação deve ser criada
+        indepentente de haver informação de cotização.
+
+        Em caso de liquidação anterior à cotização:
+
+        1 - Criar uma boleta de CPR de cotização, independente de haver ou não
+        informação de cotização - a saída de caixa é a contraparte da entrada
+        do CPR de cotização. A data de pagamento da boleta de CPR é igual à
+        data de cotização da boleta.
+
+        2 - Na data de cotização:
+            - Se houver informação de cotização, criar a movimentação do ativo e
+            a quantidade de variação do ativo.
+            - Se não houver, deve ser criada uma boleta de CPR de movimentação
+            a cotizar, com data de pagamento em aberto. A movimentação e
+            quantidade do ativo devem ser criados quando há informação de
+            cotização no sistema.
+
+        Em caso de cotização anterior à liquidação:
+
+        1 - Na data de cotização, há informação de valor de cota?
+            - Caso não haja:
+            Criar uma boleta de CPR para a pendencia da cotização com data de
+            pagamento em aberto.
+            Criar uma boleta de CPR para a pendência da liquidação.
+            - Caso haja:
+            Criar apenas a boleta de CPR de liquidação.
+
+        """
+        if self.fechada == False:
+            if self.boleta_provisao.all().exists() == False:
+                provisao = BoletaProvisao(
+                    descricao=self.operacao + " de " + self.ativo.Nome,
+                    caixa_alvo=self.caixa_alvo,
+                    fundo=self.fundo,
+                    data_pagamento=self.data_liquidacao,
+                    financeiro=self.financeiro,
+                    content_object=self
+                )
+                provisao.full_clean()
+                provisao.save()
+            if self.data_cotizacao < self.data_liquidacao:
+                # TODO: Verificar se há preço de cotização para criar a quantidade
+                # e movimentação.
+                # Caso não haja, deve criar as duas boletas de CPR
+                pass
+            elif self.data_cotizacao >= self.data_liquidacao:
+                # Criar boleta de CPR de cotização.
+                # Verificar se a data de referencia para o fechamento.
+                pass
+
+    def criar_movimentacao(self):
+        """
+        Cria a movimentação do ativo. Deve ser criada no mesmo dia em que
+        a quantidade do ativo é gerada, para que não haja descasamento da
+        variação de quantidade e, no cálculo do retorno do ativo, não haja
+        um retorno errado devido a esse descasamento
+        """
+        
 
 class BoletaEmprestimo(models.Model):
     """
@@ -704,7 +914,7 @@ class BoletaEmprestimo(models.Model):
         """
         Validação do campo quantidade
         """
-
+        self.taxa = decimal.Decimal(self.taxa).quantize(decimal.Decimal('1.000000'))
         if self.taxa < 0:
             raise ValidationError(_('Taxa inválida. Insira uma taxa positiva.'))
 
@@ -712,7 +922,7 @@ class BoletaEmprestimo(models.Model):
         """
         Validação do campo preço
         """
-
+        self.preco = decimal.Decimal(self.preco).quantize(decimal.Decimal('1.000000'))
         if self.preco < 0:
             raise ValidationError(_('Preço inválido. Insira uma preço positivo.'))
 
@@ -753,11 +963,15 @@ class BoletaEmprestimo(models.Model):
                 boleta_parcial_liquidada.quantidade = self.quantidade - quantidade
                 boleta_parcial_liquidada.data_liquidacao = data_renovacao
                 boleta_parcial_liquidada.boleta_original = self.id
+                boleta_parcial_liquidada.clean_taxa()
+                boleta_parcial_liquidada.clean_preco()
+                boleta_parcial_liquidada.full_clean()
                 boleta_parcial_liquidada.save()
                 # Liquidar a boleta
 
                 self.data_vencimento = data_vencimento
                 self.quantidade = quantidade
+                boleta_parcial_liquidada.full_clean()
                 self.save()
             # Quantidade inválida
             else:
@@ -822,6 +1036,7 @@ class BoletaEmprestimo(models.Model):
                             boleta_original=self.boleta_original,
                             caixa_alvo=self.caixa_alvo,
                             calendario=self.calendario)
+                        nova_boleta.full_clean()
                         nova_boleta.save()
                         nova_boleta.liquidar_boleta(quantidade, data_referencia)
                         # Liquidar boleta parcial
@@ -1024,14 +1239,25 @@ class BoletaPrecos(models.Model):
     Boleta para registro de preços de ativos.
     """
     ativo = models.ForeignKey('ativos.Ativo', on_delete=models.PROTECT)
-    data = models.DateField()
+    data_referencia = models.DateField()
     # Preço do ativo.
-    preco = models.DecimalField(max_digits=13, decimal_places=6)
-    # Tipo de preço - Mercado, fechamento, contábil, gerencial,
-    # tipo = models.CharField - limitar escolhas pelas colunas do modelo Preço
+    preco_fechamento = models.DecimalField(max_digits=13, decimal_places=6, blank=True, null=True)
+    preco_contabil = models.DecimalField(max_digits=13, decimal_places=6, blank=True, null=True)
+    preco_gerencial = models.DecimalField(max_digits=13, decimal_places=6, blank=True, null=True)
+    # Tipo de preço - Mercado, fechamento, contábil, gerencial
+    criado_em = models.DateTimeField(auto_now_add=True, editable=True)
 
     class Meta:
-        unique_together = (('ativo', 'data'),)
+        unique_together = (('ativo', 'data_referencia'),)
 
 class BoletaPassivo(models.Model):
-    pass
+    """
+    Boleta de movimentação de passivo de fundos.
+    """
+    cotista = models.ForeignKey('fundo.Cotista', on_delete=models.PROTECT)
+    valor = models.DecimalField(max_digits=13, decimal_places=2)
+    data_movimentacao = models.DateField()
+    data_cotizacao = models.DateField()
+    data_liquidacao = models.DateField()
+    fundo = models.ForeignKey('ativos.Ativo', on_delete=models.PROTECT)
+    cota = models.DecimalField(max_digits=10, decimal_places=2)

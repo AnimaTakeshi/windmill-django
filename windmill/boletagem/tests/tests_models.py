@@ -20,29 +20,29 @@ class BoletaEmprestimoUnitTests(TestCase):
         # Boleta inicial - usada para testar os métodos unitários
         # Boleta em aberto - sem data de liquidacao
         self.boleta = mommy.make('boletagem.BoletaEmprestimo',
-            data_operacao='2018-10-02',
-            data_reversao='2018-10-03',
+            data_operacao=datetime.date(year=2018, month=10, day=2),
+            data_reversao=datetime.date(year=2018, month=10, day=3),
             reversivel=True,
             quantidade=10000,
             preco=decimal.Decimal(10),
             taxa=decimal.Decimal(0.15))
         # Boleta para ser testar liquidaçaõ completa
         self.boleta_liquidada = mommy.make('boletagem.BoletaEmprestimo',
-            data_operacao='2018-10-01',
-            data_liquidacao='2018-10-31',
+            data_operacao=datetime.date(year=2018, month=10, day=1),
+            data_liquidacao=datetime.date(year=2018, month=10, day=31),
             quantidade=10000,
             preco=decimal.Decimal(10),
             taxa=decimal.Decimal(0.15))
         self.boleta_renovada_completa = mommy.make('boletagem.BoletaEmprestimo',
-            data_operacao='2018-10-01',
-            data_vencimento='2018-10-31',
-            data_reversao='2018-10-02',
+            data_operacao=datetime.date(year=2018, month=10, day=1),
+            data_vencimento=datetime.date(year=2018, month=10, day=31),
+            data_reversao=datetime.date(year=2018, month=10, day=2),
             quantidade=10000,
             preco=decimal.Decimal(10),
             taxa=decimal.Decimal(0.15))
         self.boleta_renovada_parcial = mommy.make('boletagem.BoletaEmprestimo',
-            data_operacao='2018-10-01',
-            data_vencimento='2018-10-24',
+            data_operacao=datetime.date(year=2018, month=10, day=1),
+            data_vencimento=datetime.date(year=2018, month=10, day=24),
             quantidade=1000,
             preco=decimal.Decimal(10),
             taxa=decimal.Decimal(0.15))
@@ -222,8 +222,8 @@ class BoletaEmprestimoUnitTests(TestCase):
         """
         Testa se o contrato é renovado completamente
         """
-        nova_data_vencimento = '2018-11-30'
-        data_renovacao = '2018-10-20'
+        nova_data_vencimento = datetime.date(year=2018, month=11, day=30)
+        data_renovacao = datetime.date(year=2018, month=10, day=20)
         self.boleta_renovada_completa.renovar_boleta(data_vencimento=nova_data_vencimento,
             quantidade=self.boleta_renovada_completa.quantidade, data_renovacao=data_renovacao)
         self.assertEqual(self.boleta_renovada_completa.data_vencimento, nova_data_vencimento)
@@ -235,9 +235,9 @@ class BoletaEmprestimoUnitTests(TestCase):
         A parcela renovada deve possuir a quantidade renovada e o novo
         vencimento.
         """
-        nova_data_vencimento = '2018-11-30'
+        nova_data_vencimento = datetime.date(year=2018, month=11, day=30)
         quantidade_renovada = 300
-        data_renovacao = '2018-10-20'
+        data_renovacao = datetime.date(year=2018, month=10, day=20)
         # A boleta original é renovada. A parcela liquidada forma uma nova
         # boleta já liquidada, com parametro boleta_original apontando para a boleta
         # original
@@ -257,9 +257,9 @@ class BoletaEmprestimoUnitTests(TestCase):
         # Checa se a boleta liquidada possui a quantidade certa
         self.assertEqual(boleta_liquidada.quantidade, quantidade_renovada)
         # Checa se a boleta liquidada foi liquidada na data correta
-        self.assertEqual(boleta_liquidada.data_liquidacao, datetime.datetime.strptime(data_renovacao, '%Y-%m-%d').date())
+        self.assertEqual(boleta_liquidada.data_liquidacao, data_renovacao)
         # Checa se a data de inicio dos contratos batem
-        self.assertEqual(datetime.datetime.strptime(self.boleta_renovada_parcial.data_operacao, '%Y-%m-%d').date(), boleta_liquidada.data_operacao)
+        self.assertEqual(self.boleta_renovada_parcial.data_operacao, boleta_liquidada.data_operacao)
         # Checa se os preços da parcela liquidada e da original batem
         self.assertEqual(self.boleta_renovada_parcial.preco, boleta_liquidada.preco)
         # Checa se a taxa de aluguel da parcela liquidada bate com a original
@@ -488,6 +488,24 @@ class BoletaAcaoUnitTests(TestCase):
         self.assertEqual(provisao.fundo, copia.fundo)
         self.assertEqual(provisao.content_object, copia)
 
+    def test_fechar_boleta(self):
+        """
+        Testa se o fechamento da boleta gera todas os objetos necessários.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.full_clean()
+        copia.save()
+        self.assertFalse(copia.boleta_provisao.all().exists())
+        self.assertFalse(copia.boleta_CPR.all().exists())
+        self.assertFalse(copia.relacao_quantidade.all().exists())
+        self.assertFalse(copia.relacao_movimentacao.all().exists())
+        copia.fechar_boleta()
+        self.assertTrue(copia.boleta_provisao.all().exists())
+        self.assertTrue(copia.boleta_CPR.all().exists())
+        self.assertTrue(copia.relacao_quantidade.all().exists())
+        self.assertTrue(copia.relacao_movimentacao.all().exists())
+
 class BoletaRendaFixaLocalUnitTest(TestCase):
     """
     Classe de Unit Test de BoletaRendaFixaLocal
@@ -499,7 +517,7 @@ class BoletaRendaFixaLocalUnitTest(TestCase):
             operacao='C',
             quantidade=1000,
             preco=decimal.Decimal(9733.787491),
-            taxa=6.4
+            taxa=decimal.Decimal(6.4)
         )
 
     def test_clean_data_liquidacao(self):
@@ -531,6 +549,9 @@ class BoletaRendaFixaLocalUnitTest(TestCase):
         copia.id = None
         copia.preco = -10
         self.assertRaises(ValidationError, copia.clean_preco)
+        copia.preco = 12.1234567890
+        copia.clean_preco()
+        self.assertEqual(copia.preco, decimal.Decimal('12.1234567890').quantize(decimal.Decimal('1.000000')))
 
     def test_cria_movimentacao(self):
         """
@@ -609,6 +630,22 @@ class BoletaRendaFixaLocalUnitTest(TestCase):
 
         self.assertIsInstance(provisao, bm.BoletaProvisao)
         self.assertEqual(provisao.financeiro, round(-(copia.preco*copia.quantidade) + copia.corretagem,2))
+
+    def test_fechar_boleta(self):
+        """
+        Testa se a função de fechamento de boleta gera as quantidades, movimentações
+        e boletas.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.preco = '9733.787491'
+        copia.taxa = '6.4'
+        copia.full_clean()
+        copia.save()
+        self.assertFalse(copia.boleta_provisao.all().exists())
+        self.assertFalse(copia.boleta_CPR.all().exists())
+        self.assertFalse(copia.relacao_quantidade.all().exists())
+        self.assertFalse(copia.relacao_movimentacao.all().exists())
 
 class BoletaRendaFixaOffshoreUnitTest(TestCase):
     """
@@ -665,6 +702,9 @@ class BoletaRendaFixaOffshoreUnitTest(TestCase):
         copia.id = None
         copia.preco = -abs(copia.preco)
         self.assertRaises(ValidationError, copia.clean_preco)
+        copia.preco = 12.1234567890
+        copia.clean_preco()
+        self.assertEqual(copia.preco, decimal.Decimal('12.1234567890').quantize(decimal.Decimal('1.000000')))
 
     def test_cria_movimentacao(self):
         """
@@ -744,6 +784,17 @@ class BoletaRendaFixaOffshoreUnitTest(TestCase):
         self.assertIsInstance(provisao, bm.BoletaProvisao)
         self.assertEqual(provisao.financeiro, round(-(copia.preco*copia.quantidade) + copia.corretagem,2))
 
+    def test_fechar_boleta(self):
+        copia = self.boleta
+        copia.id = None
+        copia.clean_preco()
+        copia.clean_taxa()
+        copia.full_clean()
+        copia.save()
+        self.assertFalse(copia.fechado())
+        copia.fechar_boleta()
+        self.assertTrue(copia.fechado())
+
 class BoletaFundoLocalUnitTest(TestCase):
     """
     Classe de Unit Test de BoletaFundoLocal
@@ -752,11 +803,14 @@ class BoletaFundoLocalUnitTest(TestCase):
         self.boleta = mommy.make('boletagem.BoletaFundoLocal',
             data_operacao=datetime.date(year=2018, month=10, day=15),
             data_cotizacao=datetime.date(year=2018, month=10, day=16),
-            data_liquidacao=datetime.date(year=2018, month=10, day=16),
+            data_liquidacao=datetime.date(year=2018, month=10, day=19),
             operacao="Aplicação",
             quantidade=1000,
             preco=1300
             )
+
+    def test_full_clean(self):
+        self.boleta.full_clean()
 
     def test_clean_financeiro_sem_quantidade_validation_exception(self):
         """
@@ -858,4 +912,174 @@ class BoletaFundoLocalUnitTest(TestCase):
     def test_cria_quantidade(self):
         """
         Testa se a boleta cria quantidades corretamente.
+
+        """
+        # TODO:Tem que ver se há valor de cota do fundo disponível para
+        # calcular a quantidade correta.
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+        self.assertFalse(copia.relacao_movimentacao.all().exists())
+        copia.criar_quantidade()
+        self.assertTrue(copia.relacao_movimentacao.all().exists())
+        tipo = ContentType.objects.get_for_model(copia)
+        qtd = fm.Quantidade.objects.get(content_type__pk=tipo.id, object_id=copia.id)
+
+        self.assertIsInstance(qtd, fm.Quantidade)
+        self.assertEqual(qtd.qtd, copia.quantidade)
+        self.assertEqual(qtd.fundo, copia.fundo)
+        self.assertEqual(qtd.data, copia.data_cotizacao)
+        self.assertEqual(mov.content_object, copia)
+        self.assertEqual(mov.objeto_quantidade, copia.ativo)
+
+    def test_cria_boleta_CPR_cotizacao_antes_liquidacao(self):
+        """
+        Testa se conseguimos criar uma boleta de CPR com as características
+        corretas da boleta de operação de fundo. Neste caso, a boleta do fundo
+        possui data de cotização anterior à data de liquidação.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+        self.assertFalse(copia.boleta_CPR.all().exists())
+        copia.criar_boleta_CPR()
+        self.assertTrue(copia.boleta_CPR.all().exists())
+        tipo = ContentType.objects.get_for_model(copia)
+        cpr = bm.BoletaCPR.objects.get(content_type__pk=tipo.id, object_id=copia.id)
+
+        self.assertIsInstance(cpr, bm.BoletaCPR)
+        self.assertEqual(cpr.valor_cheio, copia.financeiro)
+        self.assertEqual(cpr.fundo, copia.fundo)
+        self.assertEqual(cpr.data_inicio, copia.data_cotizacao)
+        self.assertEqual(cpr.data_pagamento, copia.data_liquidacao)
+        self.assertEqual(cpr.content_object, copia)
+
+    def test_cria_boleta_CPR_liquidacao_antes_cotizacao(self):
+        """
+        Testa se conseguimos criar uma boleta de CPR com as características
+        corretas da boleta de operação de fundo. Neste caso, a boleta do fundo
+        possui data de liquidação anterior à data de cotização. A operação
+        deve ser de aplicação apenas.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.data_liquidacao = copia.data_cotizacao - datetime.timedelta(days=1)
+        copia.operacao = "Aplicação"
+        copia.save()
+        self.assertFalse(copia.boleta_CPR.all().exists())
+        copia.criar_boleta_CPR()
+        self.assertTrue(copia.boleta_CPR.all().exists())
+        tipo = ContentType.objects.get_for_model(copia)
+        cpr = bm.BoletaCPR.objects.get(content_type__pk=tipo.id, object_id=copia.id)
+
+        self.assertIsInstance(cpr, bm.BoletaCPR)
+        self.assertEqual(cpr.valor_cheio, copia.financeiro)
+        self.assertEqual(cpr.fundo, copia.fundo)
+        self.assertEqual(cpr.data_inicio, copia.data_liquidacao)
+        self.assertEqual(cpr.data_pagamento, copia.data_cotizacao)
+        self.assertEqual(cpr.content_object, copia)
+
+    # TODO: Testar se há geração de boleta de passivo quando um aporte em
+    # fundo gerido é feito
+    @pytest.mark.xfail
+    def test_fechar_boleta_simples(self):
+        """
+        Testa se, ao fechar uma boleta simples, de movimentação em fundo não
+        gerido, o fechamento cria as movimentações, quantidades e boletas
+        necessárias.
+        """
+        copia = self.boleta
+        copia.id = None
+
+        self.assertFalse(copia.fechado())
+        copia.fechar_boleta()
+        self.assertTrue(copia.fechado())
+
+    @pytest.mark.xfail
+    def test_cria_boleta_passivo(self):
+        """
+        Testa se, ao fechar a boleta com todas as informações necessárias,
+        uma boleta de passivo é gerada.
+        """
+
+
+class BoletaFundoOffshoreUnitTest(TestCase):
+    """
+    Classe de Unit Tests da BoletaFundoOffshore
+    """
+    def setUp(self):
+        qtd = 1000
+        price = 1300
+        self.boleta = mommy.make('boletagem.BoletaFundoOffshore',
+            data_operacao=datetime.date(year=2018, month=10, day=15),
+            data_cotizacao=datetime.date(year=2018, month=10, day=16),
+            data_liquidacao=datetime.date(year=2018, month=10, day=19),
+            operacao="Aplicação",
+            quantidade=qtd,
+            estado='Pendente de Liquidação e Cotização',
+            preco=price,
+            financeiro=qtd*price
+        )
+
+    def test_alinha_operacao_quantidade(self):
+        """
+        Testa se o método de validação da quantidade corrige o valor da
+        quantidade de acordo com a operação.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.operacao = "Aplicação"
+        copia.quantidade = -1000
+        copia.clean_quantidade()
+        self.assertEqual(copia.quantidade, 1000)
+        self.assertEqual(copia.operacao, "Aplicação")
+        copia.operacao = "Resgate"
+        copia.quantidade = 1000
+        copia.clean_quantidade()
+        self.assertEqual(copia.quantidade, -1000)
+        self.assertEqual(copia.operacao, "Resgate")
+
+    # TODO: Precisa verificar se há preço para cotizar a movimentação.
+    @pytest.mark.xfail
+    def test_cria_quantidade(self):
+        """
+        Testa o método de criação de quantidade da boleta.
+        """
+        copia = self.boleta
+        copia.id = None
+        self.assertFalse(copia.relacao_quantidade.all().exists())
+        copia.criar_quantidade()
+        self.assertTrue(copia.relacao_quantidade.all().exists())
+        tipo = ContentType.objects.get_for_model(copia)
+        qtd = fm.Quantidade.get(content_type__pk=tipo.id, object_id=copia.id)
+
+        self.assertIsInstance(qtd, fm.Quantidade)
+        self.assertEqual(qtd.qtd, copia.quantidade)
+        self.assertEqual(qtd.fundo, copia.fundo)
+        self.assertEqual(qtd.data, copia.data_cotizacao)
+        self.assertEqual(mov.content_object, copia)
+        self.assertEqual(mov.objeto_quantidade, copia.ativo)
+
+    @pytest.mark.xfail
+    def test_cria_movimentacao(self):
+        """
+        Testa o método de criação de movimentação da boleta.
+        """
+        copia = self.boleta
+        copia.id = None
+        self.assertFalse(copia.relacao_movimentacao.all().exists())
+        copia.criar_movimentacao()
+        self.assertTrue(copia.relacao_movimentacao.all().exists())
+        tipo = ContentType.objects.get_for_model(copia)
+        mov = fm.Movimentacao.get(content_type__pk=tipo.id, object_id=copia.id)
+
+        self.assertIsInstance(mov, fm.Movimentacao)
+        self.assertEqual(mov.valor, copia.financeiro)
+        self.assertEqual(mov.fundo, copia.fundo)
+        self.assertEqual(mov.data, copia.data_cotizacao)
+
+    @pytest.mark.xfail
+    def test_fechamento_cotizacao_liquidacao_sem_cota(self):
+        """
+        Testa se o fechamento sem valor de cotização gera as duas boletas.
         """
