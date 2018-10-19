@@ -24,66 +24,93 @@ class BoletaEmprestimoUnitTests(TestCase):
             data_reversao=datetime.date(year=2018, month=10, day=3),
             reversivel=True,
             quantidade=10000,
-            preco=decimal.Decimal(10),
-            taxa=decimal.Decimal(0.15))
+            preco=decimal.Decimal(10).quantize(decimal.Decimal('1.000000')),
+            taxa=decimal.Decimal(0.15).quantize(decimal.Decimal('1.000000'))
+        )
+        self.boleta.full_clean()
+        self.boleta.save()
         # Boleta para ser testar liquidaçaõ completa
         self.boleta_liquidada = mommy.make('boletagem.BoletaEmprestimo',
             data_operacao=datetime.date(year=2018, month=10, day=1),
             data_liquidacao=datetime.date(year=2018, month=10, day=31),
             quantidade=10000,
-            preco=decimal.Decimal(10),
-            taxa=decimal.Decimal(0.15))
+            preco=decimal.Decimal(10).quantize(decimal.Decimal('1.000000')),
+            taxa=decimal.Decimal(0.15).quantize(decimal.Decimal('1.000000'))
+        )
+        self.boleta_liquidada.full_clean()
+        self.boleta_liquidada.save()
         self.boleta_renovada_completa = mommy.make('boletagem.BoletaEmprestimo',
             data_operacao=datetime.date(year=2018, month=10, day=1),
             data_vencimento=datetime.date(year=2018, month=10, day=31),
             data_reversao=datetime.date(year=2018, month=10, day=2),
             quantidade=10000,
-            preco=decimal.Decimal(10),
-            taxa=decimal.Decimal(0.15))
+            preco=decimal.Decimal(10).quantize(decimal.Decimal('1.000000')),
+            taxa=decimal.Decimal(0.15).quantize(decimal.Decimal('1.000000'))
+        )
+        self.boleta_renovada_completa.full_clean()
+        self.boleta_renovada_completa.save()
         self.boleta_renovada_parcial = mommy.make('boletagem.BoletaEmprestimo',
             data_operacao=datetime.date(year=2018, month=10, day=1),
             data_vencimento=datetime.date(year=2018, month=10, day=24),
             quantidade=1000,
-            preco=decimal.Decimal(10),
-            taxa=decimal.Decimal(0.15))
+            preco=decimal.Decimal(10).quantize(decimal.Decimal('1.000000')),
+            taxa=decimal.Decimal(0.15).quantize(decimal.Decimal('1.000000'))
+        )
+        self.boleta_renovada_parcial.full_clean()
+        self.boleta_renovada_parcial.save()
         self.boleta_a_liquidar_completo = mommy.make('boletagem.BoletaEmprestimo',
             data_operacao=datetime.date(year=2018, month=10, day=1),
             data_reversao=datetime.date(year=2018, month=10, day=2),
             data_vencimento=datetime.date(year=2018, month=11, day=30),
             quantidade=10000,
             reversivel=True,
-            preco=decimal.Decimal(10),
-            taxa=decimal.Decimal(0.15))
+            preco=decimal.Decimal(10).quantize(decimal.Decimal('1.000000')),
+            taxa=decimal.Decimal(0.15).quantize(decimal.Decimal('1.000000'))
+        )
+        self.boleta_a_liquidar_completo.full_clean()
+        self.boleta_a_liquidar_completo.save()
         self.boleta_a_liquidar_parcial = mommy.make('boletagem.BoletaEmprestimo',
             data_operacao=datetime.date(year=2018, month=10, day=1),
             data_reversao=datetime.date(year=2018, month=10, day=5),
             data_vencimento=datetime.date(year=2018, month=12, day=25),
             quantidade=15000,
-            preco=decimal.Decimal(10),
-            taxa=decimal.Decimal(0.15),
+            preco=decimal.Decimal(10).quantize(decimal.Decimal('1.000000')),
+            taxa=decimal.Decimal(0.15).quantize(decimal.Decimal('1.000000')),
             reversivel=True)
+        self.boleta_a_liquidar_parcial.full_clean()
+        self.boleta_a_liquidar_parcial.save()
         self.boleta_vencimento_errado = mommy.make('boletagem.BoletaEmprestimo',
             data_vencimento=datetime.date(year=2018, month=10, day=1),
             data_operacao=datetime.date(year=2018, month=10, day=3))
+        self.boleta_vencimento_errado.full_clean()
+        self.boleta_vencimento_errado.save()
         self.boleta_liquidacao_anterior_operacao = mommy.make('boletagem.BoletaEmprestimo',
             data_liquidacao=datetime.date(year=2018, month=10, day=1),
             data_operacao=datetime.date(year=2018, month=10, day=3),
             data_vencimento=datetime.date(year=2018, month=10, day=24))
+        self.boleta_liquidacao_anterior_operacao.full_clean()
+        self.boleta_liquidacao_anterior_operacao.save()
         self.boleta_liquidacao_posterior_vencimento = mommy.make('boletagem.BoletaEmprestimo',
             data_vencimento=datetime.date(year=2018, month=10, day=1),
             data_liquidacao=datetime.date(year=2018, month=10, day=13))
+        self.boleta_liquidacao_posterior_vencimento.full_clean()
+        self.boleta_liquidacao_posterior_vencimento.save()
         self.boleta_liquidacao_anterior_reversivel = mommy.make('boletagem.BoletaEmprestimo',
             data_liquidacao=datetime.date(year=2018, month=10, day=1),
             data_reversao=datetime.date(year=2018, month=10, day=3),
             data_vencimento=datetime.date(year=2018, month=10, day=20))
+        self.boleta_liquidacao_anterior_reversivel.full_clean()
+        self.boleta_liquidacao_anterior_reversivel.save()
         self.boleta_correta = mommy.make('boletagem.BoletaEmprestimo',
             data_liquidacao=datetime.date(year=2018, month=10, day=25),
             reversivel=False,
             data_vencimento=datetime.date(year=2018, month=10, day=30),
             data_operacao=datetime.date(year=2018, month=10, day=1),
-            quantidade=1000,
-            taxa=0.2,
+            quantidade=decimal.Decimal(1000).quantize(decimal.Decimal('1.000000')),
+            taxa=decimal.Decimal(0.2).quantize(decimal.Decimal('1.000000')),
             preco=10)
+        self.boleta_correta.full_clean()
+        self.boleta_correta.save()
         self.data_de_liquidacao = datetime.date(year=2018, month=10, day=30)
         self.quantidade_liquidada = 10000
 
@@ -359,7 +386,10 @@ class BoletaAcaoUnitTests(TestCase):
             data_liquidacao=datetime.date(year=2018, month=10, day=5),
             operacao='C',
             quantidade=100,
-            preco=10)
+            preco=decimal.Decimal(10).quantize(decimal.Decimal('1.0000000'))
+        )
+        self.boleta.full_clean()
+        self.boleta.save()
 
     def test_liquidacao_invalida(self):
         """
@@ -513,7 +543,7 @@ class BoletaRendaFixaLocalUnitTest(TestCase):
     def setUp(self):
         self.boleta = mommy.make('boletagem.BoletaRendaFixaLocal',
             data_operacao=datetime.date(year=2018, month=10, day=8),
-            data_liquidacao=datetime.date(year=2018, month=10, day=9),
+            data_liquidacao=datetime.date(year=2018, month=10, day=8),
             operacao='C',
             quantidade=1000,
             preco=decimal.Decimal(9733.787491),
@@ -797,20 +827,128 @@ class BoletaRendaFixaOffshoreUnitTest(TestCase):
 
 class BoletaFundoLocalUnitTest(TestCase):
     """
-    Classe de Unit Test de BoletaFundoLocal
+    Classe de Unit Test de BoletaFundoLocal. Assume que as boletas foram
+    full_cleaned e salvas no sistema.
+    O fechamento da boleta de fundo local, pode haver 4 cenários possíveis:
+    1 - Ativo negociado é fundo gerido:
+        - Cota da movimentação ainda não está disponível. O fechamento não
+        poder ser completo. Gera apenas a boleta de provisão e CPR.
+        - Cota da movimentação foi disponibilizada. Deve criar a movimentação
+        e a quantidade do ativo gerido para o fundo executando a movimentação.
+        Deve criar também a boleta de passivo do fundo operado.
+    2 - Ativo negociado não é fundo gerido:
+        - Similar ao primeiro caso, mas não é gerado boleta de passivo em
+        momento algum.
+
+    TODO: Necessário testar também quando há resgate, aplicação e resgate total.
+
     """
     def setUp(self):
+        # Setup de fundos geridos e não geridos
+        self.gestora_anima = mommy.make('fundo.Gestora',
+            nome='SPN',
+            anima=True
+        )
+        self.gestora_qualquer = mommy.make('fundo.Gestora',
+            anima=False
+        )
+        self.fundo_gerido = mommy.make('fundo.Fundo',
+            nome='Veredas',
+            gestora=self.gestora_anima,
+            data_de_inicio=datetime.date(year=2014, month=10, day=27),
+            categoria="Fundo de Ações"
+        )
+        self.fundo_qualquer = mommy.make('fundo.Fundo',
+            gestora=self.gestora_qualquer
+        )
+        self.ativo_fundo_gerido = mommy.make('ativos.Fundo_Local',
+            gestao=self.fundo_gerido
+        )
+        self.ativo_fundo_qualquer = mommy.make('ativos.Fundo_Local',
+            gestao=self.fundo_qualquer
+        )
+
+        # Setup de boleta completa.
         self.boleta = mommy.make('boletagem.BoletaFundoLocal',
+            ativo=self.ativo_fundo_qualquer,
+            data_operacao=datetime.date(year=2018, month=10, day=15),
+            data_cotizacao=datetime.date(year=2018, month=10, day=16),
+            data_liquidacao=datetime.date(year=2018, month=10, day=19),
+            operacao="Aplicação",
+            quantidade=1000,
+            preco=1300,
+            financeiro=-1000*1300
+        )
+        self.boleta.full_clean()
+        self.boleta.save()
+        # Setup
+        self.boleta_sem_cota_com_preco = mommy.make('boletagem.BoletaFundoLocal',
+            ativo=self.ativo_fundo_qualquer,
+            data_operacao=datetime.date(year=2018, month=10, day=15),
+            data_cotizacao=datetime.date(year=2018, month=10, day=16),
+            data_liquidacao=datetime.date(year=2018, month=10, day=19),
+            operacao="Aplicação",
+            financeiro=1300000
+        )
+        self.boleta_sem_cota_com_preco.full_clean()
+        self.boleta_sem_cota_com_preco.save()
+        preco = mommy.make('mercado.Preco',
+            ativo=self.boleta_sem_cota_com_preco.ativo,
+            preco_fechamento=1300,
+            data_referencia=self.boleta_sem_cota_com_preco.data_cotizacao
+        )
+        preco.save()
+
+        self.boleta_sem_cota_sem_preco = mommy.make('boletagem.BoletaFundoLocal',
+            ativo=self.ativo_fundo_qualquer,
+            data_operacao=datetime.date(year=2018, month=10, day=15),
+            data_cotizacao=datetime.date(year=2018, month=10, day=17),
+            data_liquidacao=datetime.date(year=2018, month=10, day=19),
+            operacao="Aplicação",
+            financeiro=1300000
+        )
+        self.boleta_sem_cota_sem_preco.full_clean()
+        self.boleta_sem_cota_sem_preco.save()
+
+        self.boleta_ativo_gerido = mommy.make('boletagem.BoletaFundoLocal',
+            ativo=self.ativo_fundo_gerido,
             data_operacao=datetime.date(year=2018, month=10, day=15),
             data_cotizacao=datetime.date(year=2018, month=10, day=16),
             data_liquidacao=datetime.date(year=2018, month=10, day=19),
             operacao="Aplicação",
             quantidade=1000,
             preco=1300
-            )
+        )
+        self.boleta_ativo_gerido.full_clean()
+        self.boleta_ativo_gerido.save()
+        # Setup
+        self.boleta_sem_cota_gerido = mommy.make('boletagem.BoletaFundoLocal',
+            ativo=self.ativo_fundo_gerido,
+            data_operacao=datetime.date(year=2018, month=10, day=15),
+            data_cotizacao=datetime.date(year=2018, month=10, day=17),
+            data_liquidacao=datetime.date(year=2018, month=10, day=19),
+            operacao="Aplicação",
+            financeiro=1300000
+        )
+        self.boleta_sem_cota_gerido.full_clean()
+        self.boleta_sem_cota_gerido.save()
 
-    def test_full_clean(self):
-        self.boleta.full_clean()
+        self.boleta_sem_cota_gerido_com_preco = mommy.make('boletagem.BoletaFundoLocal',
+            ativo=self.ativo_fundo_gerido,
+            data_operacao=datetime.date(year=2018, month=10, day=15),
+            data_cotizacao=datetime.date(year=2018, month=10, day=16),
+            data_liquidacao=datetime.date(year=2018, month=10, day=19),
+            operacao="Aplicação",
+            financeiro=1300000
+        )
+        self.boleta_sem_cota_gerido_com_preco.full_clean()
+        self.boleta_sem_cota_gerido_com_preco.save()
+        preco = mommy.make('mercado.Preco',
+            ativo=self.boleta_sem_cota_gerido_com_preco.ativo,
+            preco_fechamento=1300,
+            data_referencia=self.boleta_sem_cota_com_preco.data_cotizacao
+        )
+        preco.save()
 
     def test_clean_financeiro_sem_quantidade_validation_exception(self):
         """
@@ -908,7 +1046,6 @@ class BoletaFundoLocalUnitTest(TestCase):
         self.assertEqual(mov.content_object, copia)
         self.assertEqual(mov.objeto_movimentacao, copia.ativo)
 
-    @pytest.mark.xfail
     def test_cria_quantidade(self):
         """
         Testa se a boleta cria quantidades corretamente.
@@ -919,9 +1056,9 @@ class BoletaFundoLocalUnitTest(TestCase):
         copia = self.boleta
         copia.id = None
         copia.save()
-        self.assertFalse(copia.relacao_movimentacao.all().exists())
+        self.assertFalse(copia.relacao_quantidade.all().exists())
         copia.criar_quantidade()
-        self.assertTrue(copia.relacao_movimentacao.all().exists())
+        self.assertTrue(copia.relacao_quantidade.all().exists())
         tipo = ContentType.objects.get_for_model(copia)
         qtd = fm.Quantidade.objects.get(content_type__pk=tipo.id, object_id=copia.id)
 
@@ -929,8 +1066,8 @@ class BoletaFundoLocalUnitTest(TestCase):
         self.assertEqual(qtd.qtd, copia.quantidade)
         self.assertEqual(qtd.fundo, copia.fundo)
         self.assertEqual(qtd.data, copia.data_cotizacao)
-        self.assertEqual(mov.content_object, copia)
-        self.assertEqual(mov.objeto_quantidade, copia.ativo)
+        self.assertEqual(qtd.content_object, copia)
+        self.assertEqual(qtd.objeto_quantidade, copia.ativo)
 
     def test_cria_boleta_CPR_cotizacao_antes_liquidacao(self):
         """
@@ -979,10 +1116,73 @@ class BoletaFundoLocalUnitTest(TestCase):
         self.assertEqual(cpr.data_pagamento, copia.data_cotizacao)
         self.assertEqual(cpr.content_object, copia)
 
-    # TODO: Testar se há geração de boleta de passivo quando um aporte em
-    # fundo gerido é feito
-    @pytest.mark.xfail
-    def test_fechar_boleta_simples(self):
+    def test_cria_boleta_provisao(self):
+        """
+        Testa se a boleta de provisão criada é criada com os parametros corretos.
+        """
+        # Verifica se não há boleta associada.
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+        self.assertFalse(copia.boleta_provisao.all().exists())
+        copia.criar_boleta_provisao()
+        self.assertTrue(copia.boleta_provisao.all().exists())
+        tipo = ContentType.objects.get_for_model(copia)
+        provisao = bm.BoletaProvisao.objects.get(content_type__pk=tipo.id, object_id=copia.id)
+        self.assertEqual(-provisao.financeiro, copia.financeiro)
+        self.assertEqual(provisao.caixa_alvo, copia.caixa_alvo)
+        self.assertEqual(provisao.data_pagamento, copia.data_liquidacao)
+        self.assertEqual(provisao.fundo, copia.fundo)
+
+    def test_fechar_boleta_com_cota_ativo_gerido(self):
+        """
+        Testa se o fechamento normal de boleta de fundo local gerido cria as
+        movimentações, quantidades e boletas corretamente.
+        """
+        copia = self.boleta_ativo_gerido
+        copia.id = None
+        copia.save()
+        self.assertFalse(copia.fechado())
+        copia.fechar_boleta()
+        self.assertTrue(copia.fechado())
+
+    def test_fechar_boleta_sem_cota_ativo_gerido_sem_preco_no_sistema(self):
+        """
+        No caso de fechamento de boleta sem cota, as boletas geradas são
+        apenas de CPR e provisão, sem geração de quantidade, movimentação
+        ou boleta de passivo.
+        """
+        copia = self.boleta_sem_cota_gerido
+        copia.id = None
+        copia.save()
+        self.assertFalse(copia.boleta_provisao.all().exists())
+        self.assertFalse(copia.boleta_CPR.all().exists())
+        self.assertFalse(copia.relacao_quantidade.all().exists())
+        self.assertFalse(copia.relacao_movimentacao.all().exists())
+        self.assertFalse(copia.relacao_passivo.all().exists())
+        copia.fechar_boleta()
+        self.assertTrue(copia.boleta_provisao.all().exists())
+        self.assertTrue(copia.boleta_CPR.all().exists())
+        self.assertFalse(copia.relacao_quantidade.all().exists())
+        self.assertFalse(copia.relacao_movimentacao.all().exists())
+        self.assertFalse(copia.relacao_passivo.all().exists())
+        self.assertFalse(copia.fechado())
+
+    def test_fechar_boleta_sem_cota_ativo_gerido_com_preco_no_sistema(self):
+        """
+        Testa fechamento de boleta quando o preço está disponível, mas a
+        boleta está incompleta. Deve conseguir pegar o preço e atualizar
+        todas as informações, e ser capaz de gerar todos os objetos
+        corretamente.
+        """
+        copia = self.boleta_sem_cota_gerido_com_preco
+        copia.id = None
+        copia.save()
+        self.assertFalse(copia.fechado())
+        copia.fechar_boleta()
+        self.assertTrue(copia.fechado())
+
+    def test_fechar_boleta_com_cota_ativo_nao_gerido(self):
         """
         Testa se, ao fechar uma boleta simples, de movimentação em fundo não
         gerido, o fechamento cria as movimentações, quantidades e boletas
@@ -990,18 +1190,76 @@ class BoletaFundoLocalUnitTest(TestCase):
         """
         copia = self.boleta
         copia.id = None
+        copia.full_clean()
+        copia.save()
 
         self.assertFalse(copia.fechado())
         copia.fechar_boleta()
         self.assertTrue(copia.fechado())
 
-    @pytest.mark.xfail
+    def test_fechar_boleta_sem_cota_ativo_nao_gerido_sem_preco(self):
+        """
+        Testa se, ao fechar uma boleta sem informação de cota, ela ainda não é
+        considerada fechada. Ela só deve ser considerada fechada se tiver
+        cotizado corretamente.
+        """
+        copia = self.boleta_sem_cota_sem_preco
+        copia.id = None
+        copia.save()
+        self.assertFalse(copia.boleta_provisao.all().exists())
+        self.assertFalse(copia.boleta_CPR.all().exists())
+        self.assertFalse(copia.relacao_quantidade.all().exists())
+        self.assertFalse(copia.relacao_movimentacao.all().exists())
+        self.assertFalse(copia.relacao_passivo.all().exists())
+        copia.fechar_boleta()
+        self.assertFalse(copia.relacao_quantidade.all().exists())
+        self.assertFalse(copia.relacao_movimentacao.all().exists())
+        self.assertFalse(copia.relacao_passivo.all().exists())
+        self.assertTrue(copia.boleta_provisao.all().exists())
+        self.assertTrue(copia.boleta_CPR.all().exists())
+
+    def test_fechar_boleta_sem_cota_ativo_nao_gerido_com_preco(self):
+        """
+        Boletas incompletas mas com o preço no sistema devem criar todos
+        os objetos relacionados, e deve fechar corretamente.
+        """
+        copia = self.boleta_sem_cota_com_preco
+        copia.id = None
+        copia.save()
+        self.assertFalse(copia.fechado())
+        copia.fechar_boleta()
+        self.assertTrue(copia.fechado())
+
     def test_cria_boleta_passivo(self):
         """
         Testa se, ao fechar a boleta com todas as informações necessárias,
         uma boleta de passivo é gerada.
         """
+        copia = self.boleta_ativo_gerido
+        copia.id = None
+        copia.save()
+        self.assertFalse(copia.relacao_passivo.all().exists())
+        copia.criar_boleta_passivo()
+        self.assertTrue(copia.relacao_passivo.all().exists())
+        tipo = ContentType.objects.get_for_model(copia)
+        passivo = bm.BoletaPassivo.objects.get(content_type__pk=tipo.id, object_id=copia.id)
+        # O nome do fundo é o nome do cotista.
+        self.assertEqual(passivo.cotista.nome, copia.fundo.nome)
+        self.assertEqual(passivo.valor, copia.financeiro)
+        self.assertEqual(passivo.data_movimentacao, copia.data_operacao)
+        self.assertEqual(passivo.data_cotizacao, copia.data_cotizacao)
+        self.assertEqual(passivo.data_liquidacao, copia.data_liquidacao)
+        self.assertEqual(passivo.operacao, copia.operacao)
+        self.assertEqual(passivo.fundo.id, copia.ativo.id)
+        self.assertEqual(passivo.cota, copia.preco)
+        self.assertEqual(passivo.content_object, copia)
 
+    @pytest.mark.xfail
+    def test_resgate_total(self):
+        """
+        Testa se o resgate total calcula a quantidade financeira correta.
+        """
+        self.assertTrue(False)
 
 class BoletaFundoOffshoreUnitTest(TestCase):
     """
@@ -1039,11 +1297,11 @@ class BoletaFundoOffshoreUnitTest(TestCase):
         self.assertEqual(copia.quantidade, -1000)
         self.assertEqual(copia.operacao, "Resgate")
 
-    # TODO: Precisa verificar se há preço para cotizar a movimentação.
-    @pytest.mark.xfail
     def test_cria_quantidade(self):
         """
-        Testa o método de criação de quantidade da boleta.
+        Testa o método de criação de quantidade da boleta. Para fundo offshore,
+        o preço de cotização deve estar disponível para que a quantidade seja
+        criada. Assume que há preço disponível.
         """
         copia = self.boleta
         copia.id = None

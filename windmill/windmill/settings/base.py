@@ -48,7 +48,8 @@ INSTALLED_APPS = [
     'ativos',
     'boletagem',
     'fundo',
-    'calendario'
+    'calendario',
+    'mercado'
 ]
 
 MIDDLEWARE = [

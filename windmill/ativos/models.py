@@ -106,27 +106,35 @@ class Caixa(Ativo):
 class Fundo_Local(Ativo):
 
     CPNJ = models.CharField(max_length=18)
-    data_cotizacao_resgate = models.DateField()
-    data_liquidacao_resgate = models.DateField()
-    data_cotizacao_aplicacao = models.DateField()
-    data_liquidacao_aplicacao = models.DateField()
+    # Indica quanto tempo depois do pedido a cotização de um resgate é feita
+    data_cotizacao_resgate = models.DurationField()
+    # Indica quanto tempo depois do pedido a liquidação de um resgate é feita
+    data_liquidacao_resgate = models.DurationField()
+    # Indica quanto tempo depois do pedido a cotização de uma aplicação é feita
+    data_cotizacao_aplicacao = models.DurationField()
+    # Indica quanto tempo depois do pedido a liquidação de uma aplicação é feita
+    data_liquidacao_aplicacao = models.DurationField()
     banco = models.CharField(max_length=3, null=True, blank=True)
     agencia = models.CharField(max_length=6, null=True, blank=True)
     conta_corrente = models.CharField(max_length=7)
     digito = models.CharField(max_length=1, null=True, blank=True)
     conta_cetip = models.CharField(max_length=10, null=True, blank=True)
     codigo_cetip = models.CharField(max_length=10, null=True, blank=True)
-    gerido = models.ForeignKey('fundo.Fundo', on_delete=models.PROTECT)
+    # Liga o ativo fundo ao fundo do ponto de vista de gestão.
+    gestao = models.ForeignKey('fundo.Fundo', on_delete=models.PROTECT, null=True, blank=True)
 
     class Meta:
         verbose_name_plural = 'Fundos Locais'
 
+    def gerido(self):
+        return self.gestao.gestora.anima
+
 class Fundo_Offshore(Ativo):
 
-    data_cotizacao_resgate = models.DateField()
-    data_liquidacao_resgate = models.DateField()
-    data_cotizacao_aplicacao = models.DateField()
-    data_liquidacao_aplicacao = models.DateField()
+    data_cotizacao_resgate = models.DurationField()
+    data_liquidacao_resgate = models.DurationField()
+    data_cotizacao_aplicacao = models.DurationField()
+    data_liquidacao_aplicacao = models.DurationField()
     gerido = models.ForeignKey('fundo.Fundo', on_delete=models.PROTECT)
 
     class Meta:

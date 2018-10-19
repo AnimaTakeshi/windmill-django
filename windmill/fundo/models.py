@@ -6,7 +6,7 @@ Responsabilidades deste app:
         - Fechamento diário para cálculo de cota.
         - Fechamento mensal para cálculo de cota.
 """
-
+import decimal
 from django.db import models
 from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelation
 from django.contrib.contenttypes.models import ContentType
@@ -176,11 +176,11 @@ class Corretora(models.Model):
         """
         Calcula a corretagem de um trade de ações.
         """
-        corretagem = -self.taxa_corretagem/100*abs(financeiro) - abs(self.taxa_fixa)
+        corretagem = -decimal.Decimal(self.taxa_corretagem)/100*abs(financeiro) - abs(self.taxa_fixa)
         if self.taxa_minima != 0:
             if abs(corretagem) < abs(self.taxa_minima):
                 corretagem = -abs(self.taxa_minima)
-        return corretagem
+        return decimal.Decimal(corretagem).quantize(decimal.Decimal('1.00'))
 
     def calcular_emolumentos(self, financeiro):
         """
@@ -347,13 +347,16 @@ class Cotista(models.Model):
     fundos ou pessoas.
     """
     # Nome do cotista
-    nome = models.CharField(max_length=50)
+    nome = models.CharField(max_length=100, unique=True)
     # Número do documento de identificação - CPF/CNPJ
-    n_doc = models.CharField(max_length=20)
+    n_doc = models.CharField(max_length=20, blank=True, null=True)
     # Cota média é o parâmetero para o cálculo do imposto de renda do cotista.
     # Ela é determinada pela média ponderada do valor da cota dos certificados
     # de passivo pela quantidade de cotas ainda aplicada.
-    cota_media = models.DecimalField(max_digits=15, decimal_places=7)
+    cota_media = models.DecimalField(max_digits=15, decimal_places=7, blank=True, null=True)
+    # Se o cotista for um fundo gerido,
+    fundo_cotista = models.ForeignKey('fundo.Fundo', on_delete=models.PROTECT,
+        null=True, blank=True, unique=True)
 
 
 class CertificadoPassivo(models.Model):

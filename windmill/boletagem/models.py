@@ -8,12 +8,13 @@ Responsabilidades deste app:
 
 Funcionamento:
     - Boletas de ativos geram Movimentações e Quantidades dos seus respectivos
-    ativos no app de Fundo. Movimentações e Quantidades são consolidados em
-    Vértices, que compõem uma Carteira. No fechamento de boletas de
-    ativos, são geradas boletas de CPR e provisão, para refletir o CPR
-    do ativo e a movimentação de caixa causada pela operação com o ativo.
+    ativos no app de Fundo. Movimentações e Quantidades são modelos do app
+    "Fundo", e são consolidados em Vértices, que compõem uma Carteira.
+    No fechamento de boletas de ativos, são geradas boletas de CPR e provisão,
+    para refletir o CPR do ativo e a movimentação de caixa causada pela
+    operação com o ativo.
     - Boletas de CPR geram CPRs, que, por sua vez, geram Movimentações e
-    Quantidades.
+    Quantidades de CPR.
     - Boletas de Provisão criam as Movimentações e Quantidades de caixas
     dos fundos.
     - Boletas de preço servem para inserirmos no sistema informações sobre
@@ -27,6 +28,24 @@ Funcionamento:
     ver se o ativo faz parte delas. Caso faça parte, a boleta de provento
     gera uma boleta de provisão e uma boleta de CPR, assim como uma
     Movimentação do ativo.
+
+Sobre o tratamento de boletas do ponto de vista de processo do sistema:
+    - Ao serem boletados, as boletas devem ter seus campos "limpos" por métodos
+    "clean_<field>()". Desta forma, validamos informações que o usuário insere
+    no sistema.
+    - As boletas podem ser fechadas. Isso significa que as informações
+    relevantes foram todas inseridas, e todos os objetos relevantes relacionados
+    foram criados, como Quantidade do ativo, e boletas de CPR e provisão.
+    - Boletas em aberto (que ainda não criaram todos os objetos relacionados)
+    são fechadas diariamente.
+    - No fechamento da boleta:
+        1 - Se verifica no sistema se há informações disponíveis para completar
+        a boleta.
+        2 - Os objetos relacionados à boleta são criados.
+        O método 'fechado' verifica se foram criados todos os objetos.
+    - Quando boletas são atualizadas com alguma informação, os objetos
+    relacionados devem ser atualizados com as informações relevantes também.
+
 """
 import datetime
 import decimal
@@ -38,12 +57,17 @@ from django.utils.translation import gettext_lazy as _
 from fundo.models import Quantidade, Movimentacao
 import ativos.models as am
 import fundo.models as fm
+import mercado.models as mm
 
 # Create your models here.
 
 class BoletaAcao(models.Model):
     """
-    Representa a boleta de um trade de ações.
+    Representa a boleta de um trade de ações. A boleta de ações deve ter todas
+    as informações necessárias para a geração das boletas e quantidades
+    no momento em que ela é armazenada no sistema.
+    O custo total de corretagem pode ser alterado posteriormente, para o pró
+    ximo
     """
     OPERACAO = (
         ('C', 'C'),
@@ -99,16 +123,22 @@ class BoletaAcao(models.Model):
         if self.preco < 0 :
             self.preco = -self.preco
 
+    def clean_corretagem(self):
+        """
+        Caso a corretagem não tenha sido inserida, calcula a corretagem
+        """
+        if self.corretagem == None:
+            self.corretagem = self.corretora.calcular_corretagem(self.quantidade * self.preco, self.quantidade)
+
     def save(self, *args, **kwargs):
         """
         Caso o valor da corretagem não tenha sido inserido, calcula.
         """
-        self.clean()
-        if self.corretagem == None:
-            self.corretagem = self.corretora.calcular_corretagem(self.quantidade * self.preco, self.quantidade)
-            super().save(*args, **kwargs)
-        else:
-            super().save(*args, **kwargs)
+        self.clean_data_liquidacao()
+        self.clean_quantidade()
+        self.clean_preco()
+        self.clean_corretagem()
+        super().save(*args, **kwargs)
 
     def fechar_boleta(self):
         """
@@ -152,7 +182,7 @@ class BoletaAcao(models.Model):
                 fundo = self.fundo,
                 data_pagamento = self.data_liquidacao,
                 # A movimentação de caixa tem sinal oposto à variação de quantidade
-                financeiro = - (self.preco * self.quantidade) + self.corretagem,
+                financeiro = decimal.Decimal(-(self.preco * self.quantidade) + self.corretagem).quantize(decimal.Decimal('1.00')),
                 content_object = self
             )
             boleta_provisao.full_clean()
@@ -174,7 +204,7 @@ class BoletaAcao(models.Model):
                 op = 'Venda '
             boleta_CPR = BoletaCPR(
                 descricao = op + self.acao.nome,
-                valor_cheio = -(self.preco * self.quantidade) + self.corretagem,
+                valor_cheio = decimal.Decimal(-(self.preco * self.quantidade) + self.corretagem).quantize(decimal.Decimal('1.00')),
                 data_inicio = self.data_operacao,
                 data_pagamento = self.data_liquidacao,
                 fundo = self.fundo,
@@ -552,6 +582,11 @@ class BoletaFundoLocal(models.Model):
     """
     Representa uma operação de cotas de fundo local. Processado da mesma maneira
     que a boleta de ação.
+    Ao salvar uma boleta:
+        Todas as informações devem ser limpadas pelos métodos "clean_<campo>()"
+    Ao fazer o fechamento de uma boleta:
+        A boleta deve ser atualizada com informações do sistema, se estiverem
+    disponíveis.
     """
     OPERACAO = (
         ('Aplicação', 'Aplicação'),
@@ -580,6 +615,14 @@ class BoletaFundoLocal(models.Model):
     boleta_CPR = GenericRelation('BoletaCPR', related_query_name='CPR')
     relacao_quantidade = GenericRelation(Quantidade, related_query_name='qtd_fundo_local')
     relacao_movimentacao = GenericRelation(Movimentacao, related_query_name='mov_fundo_local')
+    relacao_passivo = GenericRelation('BoletaPassivo', related_query_name='mov_origem')
+
+    def save(self, *args, **kwargs):
+        self.clean_financeiro()
+        # self.clean_data_cotizacao()
+        # self.clean_data_liquidacao()
+        # self.clean_quantidade()
+        super().save(*args, **kwargs)
 
     def clean_financeiro(self):
         """
@@ -588,9 +631,9 @@ class BoletaFundoLocal(models.Model):
         Caso algum dos dois não esteja preenchido, financeiro deve estar.
         """
         if self.quantidade == None or self.preco == None:
-            if self.financeiro == None:
+            if self.financeiro == None and self.operacao != "Resgate Total":
                 raise ValidationError(_("Informe o financeiro ou quantidade e preço."))
-        elif self.quantidade != None and self.preco != None:
+        elif self.quantidade != None and self.preco != None and self.financeiro == None:
             self.financeiro = self.quantidade * self.preco
 
     def clean_data_liquidacao(self):
@@ -612,8 +655,20 @@ class BoletaFundoLocal(models.Model):
 
     def clean_quantidade(self):
         """
-        Alinha a quantidade com a operação.
+        Alinha o sinal da quantidade com a operação. Caso seja uma operação
+        de aplicação, a quantidade deve ser positiva. Caso seja um resgate,
+        a quantidade deve ser negativa.
+        Caso a quantidade seja
         """
+        if self.quantidade is None:
+            if self.cota_disponivel() == True:
+                if self.operacao == "Aplicação":
+                    quantidade = abs(self.financeiro)/self.preco
+                elif self.operacao == "Resgate":
+                    quantidade = -abs(self.financeiro)/self.preco
+                elif self.operacao == "Resgate Total":
+                    # TODO: Em caso de resgate total, a quantidade é igual à posição inteira do ativo na carteira.
+                    pass
         if self.operacao == "Aplicação" and self.quantidade is not None:
             self.quantidade = abs(self.quantidade)
             self.clean_financeiro()
@@ -626,10 +681,66 @@ class BoletaFundoLocal(models.Model):
         Retorna True se houver boleta de provisão e CPR associadas a essa boleta,
         assim como quantidade e movimento do ativo.
         """
+        passivo_fechado = True
+        if self.passivo() == True:
+            if self.relacao_passivo.all().exists() == False:
+                passivo_fechado = False
+
         return self.boleta_provisao.all().exists() and \
             self.boleta_CPR.all().exists() and \
             self.relacao_quantidade.all().exists() and \
-            self.relacao_movimentacao.all().exists()
+            self.relacao_movimentacao.all().exists() and passivo_fechado
+
+    def passivo(self):
+        """
+        Retorna True se o ativo movimentado é um fundo gerido. Caso contrário,
+        retorna False. Isto significa que há uma movimentação de passivo no
+        fundo sofrendo a movimentação.
+        """
+        return self.ativo.gerido()
+
+    def cota_disponivel(self):
+        """
+        Verifica se o valor da cota está disponível. Se estiver, atualiza a boleta
+        com ele.
+        """
+        if self.preco == None:
+            preco = mm.Preco.objects.filter(ativo=self.ativo, data_referencia=self.data_cotizacao).first()
+            if preco == None:
+                return False
+            self.preco = decimal.Decimal(preco.preco_fechamento).quantize(decimal.Decimal('1.000000'))
+            self.save()
+            return True
+        else:
+            return True
+
+    def fechar_boleta(self):
+        """
+        Faz o fechamento da boleta, de acordo com as informações disponíveis.
+        Podemos criar as boletas de provisão e CPR independente de haver
+        informação de cota da movimentação. Caso o ativo movimentado seja um
+        fundo gerido, podemos gerar uma boleta de passivo. Quando a informação
+        de cota estiver disponível, podemos criar a quantidade e movimentação
+        do ativo.
+        """
+        self.atualizar_boleta()
+        self.criar_boleta_provisao()
+        self.criar_boleta_CPR()
+        if self.quantidade is not None:
+            self.criar_quantidade()
+            self.criar_movimentacao()
+        if self.passivo() == True and self.quantidade is not None:
+            self.criar_boleta_passivo()
+
+    def atualizar_boleta(self):
+        """
+        Busca informações no sistema para completar a boleta.
+        """
+        if self.preco is None:
+            if self.cota_disponivel() == True:
+                if self.quantidade is None and self.financeiro is not None:
+                    self.quantidade = self.financeiro/self.preco
+            self.clean_quantidade()
 
     def criar_movimentacao(self):
         """
@@ -642,9 +753,12 @@ class BoletaFundoLocal(models.Model):
                 fundo=self.fundo,
                 data=self.data_cotizacao,
                 content_object=self,
-                objeto_movimentacao=self.ativo
+                object_id=self.id,
+                objeto_movimentacao=self.ativo,
+                tipo_id=self.ativo.id
             )
-            mov.clean()
+            print(self)
+            mov.full_clean()
             mov.save()
 
     def criar_quantidade(self):
@@ -655,7 +769,17 @@ class BoletaFundoLocal(models.Model):
         # TODO: VERIFICAR SE O PREÇO DO ATIVO JÁ FOI INFORMADO PARA CRIAR
         # A MOVIMENTAÇÃO.
         if self.relacao_quantidade.all().exists() == False:
-            pass
+            self.clean_quantidade()
+            qtd = fm.Quantidade(
+                qtd=self.quantidade,
+                fundo=self.fundo,
+                data=self.data_cotizacao,
+                content_object=self,
+                object_id=self.id,
+                objeto_quantidade=self.ativo
+            )
+            qtd.full_clean()
+            qtd.save()
 
     def criar_boleta_CPR(self):
         """
@@ -686,7 +810,46 @@ class BoletaFundoLocal(models.Model):
                 cpr.save()
 
     def criar_boleta_provisao(self):
-        pass
+        if self.boleta_provisao.all().exists() == False:
+            provisao = BoletaProvisao(
+                descricao=self.operacao + " " + self.ativo.nome,
+                caixa_alvo=self.caixa_alvo,
+                fundo=self.fundo,
+                data_pagamento=self.data_liquidacao,
+                # O valor financeiro movimentado é oposto do valor do ativo.
+                # Se for uma aplicação, precisamos desembolsar dinheiro,
+                # se for um resgate, recebemos dinheiro.
+                financeiro= -self.financeiro,
+                content_object=self
+            )
+            provisao.full_clean()
+            provisao.save()
+
+    def criar_boleta_passivo(self):
+        """
+        Quando o ativo movimentado é um fundo gerido, deve haver a geração
+        de uma boleta de passivo para o fundo.
+        """
+        if self.relacao_passivo.all().exists() == False:
+            # Busca cotista equivalente ao fundo
+            cotista = fm.Cotista.objects.filter(fundo_cotista=self.fundo).first()
+            if cotista is None:
+                # Se for o primeiro aporte do fundo, cria o cotista equivalente.
+                cotista = fm.Cotista(nome=self.fundo.nome)
+                cotista.save()
+            passivo = BoletaPassivo(
+                cotista=cotista,
+                valor=self.financeiro,
+                data_movimentacao=self.data_operacao,
+                data_cotizacao=self.data_cotizacao,
+                data_liquidacao=self.data_liquidacao,
+                operacao=self.operacao,
+                fundo=self.ativo,
+                cota=self.preco,
+                content_object=self
+            )
+            passivo.full_clean()
+            passivo.save()
 
 class BoletaFundoOffshore(models.Model):
     """
@@ -755,6 +918,20 @@ class BoletaFundoOffshore(models.Model):
         else:
             return False
 
+    def cotizavel(self):
+        """
+        Determina se é possível cotizar a boleta, calculando a quantidade de
+        cotas que serão movimentadas na operação.
+        """
+        if mm.Preco.objects.filter(ativo=self.ativo, data_referencia=data_cotizacao).exists():
+            return True
+        return False
+
+    def passivo(self):
+        """
+        Determina se a boleta
+        """
+
     def fechar_boleta(self):
         """
         O fechamento deve pegar apenas as boletas que possuem o campo 'fechada'
@@ -818,7 +995,9 @@ class BoletaFundoOffshore(models.Model):
         variação de quantidade e, no cálculo do retorno do ativo, não haja
         um retorno errado devido a esse descasamento
         """
-        
+
+    def criar_quantidade(self):
+        pass
 
 class BoletaEmprestimo(models.Model):
     """
@@ -1189,8 +1368,8 @@ class BoletaProvisao(models.Model):
 
     # Content type para servir de ForeignKey de qualquer boleta a ser
     # inserida no sistema.
-    content_type = models.ForeignKey(ContentType, on_delete=models.PROTECT)
-    object_id = models.PositiveIntegerField()
+    content_type = models.ForeignKey(ContentType, on_delete=models.PROTECT, null=True, blank=True)
+    object_id = models.PositiveIntegerField(null=True, blank=True)
     content_object = GenericForeignKey('content_type', 'object_id')
 
     class Meta:
@@ -1224,8 +1403,8 @@ class BoletaCPR(models.Model):
 
     # Content type para servir de ForeignKey de qualquer boleta de operação
     # a ser inserida no sistema.
-    content_type = models.ForeignKey(ContentType, on_delete=models.PROTECT)
-    object_id = models.PositiveIntegerField()
+    content_type = models.ForeignKey(ContentType, on_delete=models.PROTECT, null=True, blank=True)
+    object_id = models.PositiveIntegerField(null=True, blank=True)
     content_object = GenericForeignKey('content_type', 'object_id')
 
     class Meta:
@@ -1234,30 +1413,26 @@ class BoletaCPR(models.Model):
     def __str__(self):
         return '%s' % (self.descricao)
 
-class BoletaPrecos(models.Model):
-    """
-    Boleta para registro de preços de ativos.
-    """
-    ativo = models.ForeignKey('ativos.Ativo', on_delete=models.PROTECT)
-    data_referencia = models.DateField()
-    # Preço do ativo.
-    preco_fechamento = models.DecimalField(max_digits=13, decimal_places=6, blank=True, null=True)
-    preco_contabil = models.DecimalField(max_digits=13, decimal_places=6, blank=True, null=True)
-    preco_gerencial = models.DecimalField(max_digits=13, decimal_places=6, blank=True, null=True)
-    # Tipo de preço - Mercado, fechamento, contábil, gerencial
-    criado_em = models.DateTimeField(auto_now_add=True, editable=True)
-
-    class Meta:
-        unique_together = (('ativo', 'data_referencia'),)
-
 class BoletaPassivo(models.Model):
     """
     Boleta de movimentação de passivo de fundos.
     """
+
+    OPERACAO = (
+        ('Aplicação', 'Aplicação'),
+        ('Resgate', 'Resgate'),
+        ('Resgate Total', 'Resgate Total')
+    )
+
     cotista = models.ForeignKey('fundo.Cotista', on_delete=models.PROTECT)
     valor = models.DecimalField(max_digits=13, decimal_places=2)
     data_movimentacao = models.DateField()
     data_cotizacao = models.DateField()
     data_liquidacao = models.DateField()
+    operacao = models.CharField(max_length=15, choices=OPERACAO)
     fundo = models.ForeignKey('ativos.Ativo', on_delete=models.PROTECT)
-    cota = models.DecimalField(max_digits=10, decimal_places=2)
+    cota = models.DecimalField(max_digits=15, decimal_places=6)
+
+    content_type = models.ForeignKey(ContentType, on_delete=models.PROTECT, null=True, blank=True)
+    object_id = models.PositiveIntegerField(null=True, blank=True)
+    content_object = GenericForeignKey('content_type', 'object_id')
