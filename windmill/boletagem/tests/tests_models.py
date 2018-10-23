@@ -1272,9 +1272,9 @@ class BoletaFundoOffshoreUnitTest(TestCase):
             data_operacao=datetime.date(year=2018, month=10, day=15),
             data_cotizacao=datetime.date(year=2018, month=10, day=16),
             data_liquidacao=datetime.date(year=2018, month=10, day=19),
-            operacao="Aplicação",
+            operacao=bm.BoletaFundoOffshore.OPERACAO[0][0],
             quantidade=qtd,
-            estado='Pendente de Liquidação e Cotização',
+            estado=bm.BoletaFundoOffshore.ESTADO[4][0],
             preco=price,
             financeiro=qtd*price
         )
@@ -1301,35 +1301,38 @@ class BoletaFundoOffshoreUnitTest(TestCase):
         """
         Testa o método de criação de quantidade da boleta. Para fundo offshore,
         o preço de cotização deve estar disponível para que a quantidade seja
-        criada. Assume que há preço disponível.
+        criada. Assume que há preço disponível. Assume que a boleta em questão
+        foi salva antes de criar a quantidade.
         """
         copia = self.boleta
         copia.id = None
+        copia.save()
         self.assertFalse(copia.relacao_quantidade.all().exists())
         copia.criar_quantidade()
         self.assertTrue(copia.relacao_quantidade.all().exists())
+
         tipo = ContentType.objects.get_for_model(copia)
-        qtd = fm.Quantidade.get(content_type__pk=tipo.id, object_id=copia.id)
+        qtd = fm.Quantidade.objects.get(content_type__pk=tipo.id, object_id=copia.id)
 
         self.assertIsInstance(qtd, fm.Quantidade)
         self.assertEqual(qtd.qtd, copia.quantidade)
         self.assertEqual(qtd.fundo, copia.fundo)
         self.assertEqual(qtd.data, copia.data_cotizacao)
-        self.assertEqual(mov.content_object, copia)
-        self.assertEqual(mov.objeto_quantidade, copia.ativo)
+        self.assertEqual(qtd.content_object, copia)
+        self.assertEqual(qtd.objeto_quantidade, copia.ativo)
 
-    @pytest.mark.xfail
     def test_cria_movimentacao(self):
         """
         Testa o método de criação de movimentação da boleta.
         """
         copia = self.boleta
         copia.id = None
+        copia.save()
         self.assertFalse(copia.relacao_movimentacao.all().exists())
         copia.criar_movimentacao()
         self.assertTrue(copia.relacao_movimentacao.all().exists())
         tipo = ContentType.objects.get_for_model(copia)
-        mov = fm.Movimentacao.get(content_type__pk=tipo.id, object_id=copia.id)
+        mov = fm.Movimentacao.objects.get(content_type__pk=tipo.id, object_id=copia.id)
 
         self.assertIsInstance(mov, fm.Movimentacao)
         self.assertEqual(mov.valor, copia.financeiro)
@@ -1337,7 +1340,72 @@ class BoletaFundoOffshoreUnitTest(TestCase):
         self.assertEqual(mov.data, copia.data_cotizacao)
 
     @pytest.mark.xfail
-    def test_fechamento_cotizacao_liquidacao_sem_cota(self):
+    def test_cria_boleta_CPR_cotizacao(self):
         """
-        Testa se o fechamento sem valor de cotização gera as duas boletas.
+        Testa o método para criação de boleta de CPR para cotização da
+        movimentação.
         """
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+        self.assertFalse(copia.boleta_CPR.all().exists())
+        copia.cria_boleta_CPR_cotizacao()
+        self.assertTrue(copia.boleta_CPR.all().exists())
+
+        tipo = ContentType.objects.get_for_model(copia)
+        cpr = bm.BoletaCPR.objects.get(content_type__pk=tipo.id, object_id=copia.id)
+
+        self.assertIsInstance(cpr, bm.BoletaCPR)
+        self.assertEqual(cpr.valor_cheio, copia.financeiro)
+        self.assertEqual(cpr.data_inicio, copia.data_operacao)
+        self.assertEqual(cpr.data_pagamento, copia.data_cotizacao)
+        self.assertEqual(cpr.fundo, copia.fundo)
+
+    @pytest.mark.xfail
+    def test_cria_boleta_CPR_liquidacao(self):
+        """
+        Testa o método para criação de boleta de CPR para liquidação
+        da movimentação.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+        self.assertFalse(copia.boleta_CPR.all().exists())
+        copia.cria_boleta_CPR_cotizacao()
+        self.assertTrue(copia.boleta_CPR.all().exists())
+
+        tipo = ContentType.objects.get_for_model(copia)
+        cpr = bm.BoletaCPR.objects.get(content_type__pk=tipo.id, object_id=copia.id)
+
+        self.assertIsInstance(cpr, bm.BoletaCPR)
+        self.assertEqual(cpr.valor_cheio, -copia.financeiro)
+        self.assertEqual(cpr.data_inicio, copia.data_operacao)
+        self.assertEqual(cpr.data_pagamento, copia.data_cotizacao)
+        self.assertEqual(cpr.fundo, copia.fundo)
+
+    def test_fechamento_transicao_1(self):
+        """
+        Testa o fechamento da transição de estado 'Pendente de cotização e
+        liquidação' -> 'pendente de cotização'
+        (Data de liquidação anterior à data de cotização)
+        Condições necessárias:
+            - Valor financeiro a liquidar.
+            - Fechamento na data de liquidação.
+        Tarefas a executar:
+            - Cria a boleta de provisão, para a saída de caixa.
+            - Cria a boleta de CPR de cotização com data de início igual
+            à data de liquidação, e sem data de pagamento, que deve ser
+            atualizada quando o preço da cota for disponibilizado.
+            - Atualizar estado.
+        """
+        copia = self.boleta
+        copia.id = None
+        data_fechamento = copia.data_liquidacao
+        copia.preco = None
+        copia.quantidade= None
+        copia.estado
+        copia.save()
+
+        self.assertFalse(copia.boleta_provisao.all().exists())
+        self.assertFalse(copia.boleta_CPR.all().exists())
+        self.assertEqual(copia.estado, bm.BoletaFundoOffshore.ESTADO[4][0])

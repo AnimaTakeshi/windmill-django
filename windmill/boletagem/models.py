@@ -775,7 +775,6 @@ class BoletaFundoLocal(models.Model):
                 fundo=self.fundo,
                 data=self.data_cotizacao,
                 content_object=self,
-                object_id=self.id,
                 objeto_quantidade=self.ativo
             )
             qtd.full_clean()
@@ -863,11 +862,6 @@ class BoletaFundoOffshore(models.Model):
     de quantidade com a movimentação.
     """
 
-    """
-    O estado da boleta é atualizado automaticamente, conforme a boleta é
-    fechada dia a dia. A cada fechamento, deve ser verificado se houve
-    divulgação do valor da cota, ou se houve liquidação da movimentação.
-    """
     ESTADO = (
         ('Pendente de Cotização', 'Pendente de Cotização'),
         ('Pendente de Liquidação', 'Pendente de Liquidação'),
@@ -877,6 +871,7 @@ class BoletaFundoOffshore(models.Model):
         ('Pendente de Liquidação e Cotização','Pendente de Liquidação e Cotização'),
         ('Concluído', 'Concluído')
     )
+
     OPERACAO = (
         ('Aplicação', 'Aplicação'),
         ('Resgate', 'Resgate'),
@@ -884,10 +879,11 @@ class BoletaFundoOffshore(models.Model):
     )
 
     ativo = models.ForeignKey('ativos.Fundo_Offshore', on_delete=models.PROTECT)
-    estado = models.CharField(max_length=48, choices=ESTADO)
+    estado = models.CharField(max_length=80, choices=ESTADO)
     data_operacao = models.DateField(default=datetime.date.today)
     data_cotizacao = models.DateField()
     data_liquidacao = models.DateField()
+    fundo = models.ForeignKey('fundo.Fundo', on_delete=models.PROTECT)
     financeiro = models.DecimalField(max_digits=16, decimal_places=6, blank=True, null=True)
     preco = models.DecimalField(max_digits=15, decimal_places=6, blank=True, null=True)
     quantidade = models.DecimalField(max_digits=15, decimal_places=6, blank=True, null=True)
@@ -899,15 +895,40 @@ class BoletaFundoOffshore(models.Model):
     relacao_quantidade = GenericRelation(Quantidade, related_query_name='qtd_fundo_off')
     relacao_movimentacao = GenericRelation(Movimentacao, related_query_name='mov_fundo_off')
 
+    def clean_preco(self):
+        """
+        Busca o valor do preco no banco de dados e preenche a boleta, caso esteja
+        disponível.
+        """
+        if self.cotizavel():
+            self.preco = mm.Preco.objects.filter(ativo=self.ativo, data_referencia=data_cotizacao).first().preco_fechamento
+        else:
+            raise ValueError(_("Valor de cotização indisponível."))
+
     def clean_quantidade(self):
         """
         Valida o campo quantidade. Alinha o valor do campo com a operação
         realizada
         """
-        if "Resgate" in self.operacao:
-            self.quantidade = -abs(self.quantidade)
+        if self.quantidade != None:
+            if "Resgate" in self.operacao:
+                self.quantidade = -abs(self.quantidade)
+            else:
+                self.quantidade = abs(self.quantidade)
         else:
-            self.quantidade = abs(self.quantidade)
+            if "Resgate" in self.operacao:
+                self.quantidade = -abs(self.financeiro)/self.preco
+            else:
+                self.quantidade = abs(self.financeiro)/self.preco
+
+    def clean_financeiro(self):
+        """
+        Preenche o campo financeiro, se ele já não estiver preenchido. Deve
+        haver um valor de cota e quantidade de cotas para que seja possível
+        calculá-lo.
+        """
+        if self.financeiro == None:
+            self.financeiro = self.preco * self.quantidade
 
     def fechado(self):
         """
@@ -932,41 +953,112 @@ class BoletaFundoOffshore(models.Model):
         Determina se a boleta
         """
 
-    def fechar_boleta(self):
+    def fechar_boleta(self, data_referencia):
         """
-        O fechamento deve pegar apenas as boletas que possuem o campo 'fechada'
-        como Falso.
-        Ao fazer o fechamento, devemos avaliar os seguintes casos:
-        A boleta de provisão para a liquidação da movimentação deve ser criada
-        indepentente de haver informação de cotização.
-
-        Em caso de liquidação anterior à cotização:
-
-        1 - Criar uma boleta de CPR de cotização, independente de haver ou não
-        informação de cotização - a saída de caixa é a contraparte da entrada
-        do CPR de cotização. A data de pagamento da boleta de CPR é igual à
-        data de cotização da boleta.
-
-        2 - Na data de cotização:
-            - Se houver informação de cotização, criar a movimentação do ativo e
-            a quantidade de variação do ativo.
-            - Se não houver, deve ser criada uma boleta de CPR de movimentação
-            a cotizar, com data de pagamento em aberto. A movimentação e
-            quantidade do ativo devem ser criados quando há informação de
-            cotização no sistema.
-
-        Em caso de cotização anterior à liquidação:
-
-        1 - Na data de cotização, há informação de valor de cota?
-            - Caso não haja:
-            Criar uma boleta de CPR para a pendencia da cotização com data de
-            pagamento em aberto.
-            Criar uma boleta de CPR para a pendência da liquidação.
-            - Caso haja:
-            Criar apenas a boleta de CPR de liquidação.
-
+        CRIAÇÃO DE BOLETAS BASEADA NA TRANSIÇÃO DE ESTADOS:
+            5.1.1 Boletagem de Operação no Manual Windmill:
+            As transições ocorrem ao fechar a boleta, de acordo com as informações
+        disponíveis no sistema. Ao executar o fechamento, devemos verificar no
+        sistema quais informações estão disponíveis para que possamos executar a
+        transição de estados de forma correta.
+            Transição 1 - Pendente de cotização e liquidação -> pendente de cotização.
+                (Data de liquidação anterior à data de cotização)
+                Condições necessárias:
+                    - Valor financeiro a liquidar.
+                    - Fechamento na data de liquidação.
+                Tarefas a executar:
+                    - Cria a boleta de provisão, para a saída de caixa.
+                    - Cria a boleta de CPR de cotização com data de início igual
+                    à data de liquidação, e sem data de pagamento, que deve ser
+                    atualizada quando o preço da cota for disponibilizado.
+                    - Atualizar estado.
+            Transição 2 - Pendente de cotização e liquidação -> pendente de liquidação.
+                (Data de cotização anterior à data de liquidação)
+                Condições necessárias:
+                    - Valor financeiro a liquidar, quantidade de cotas e valor das cotas.
+                    - Fechamento na data de cotização.
+                Tarefas a executar:
+                    - Cria a boleta de provisão, para saída de caixa.
+                    - Cria a boleta de CPR de liquidação, com valor financeiro inverso
+                    à boleta de operação.
+                    - Cria a quantidade e movimentação do ativo.
+                    - Atualizar estado.
+            Transição 3 - Pendente de cotização -> Concluído
+                Condições necessárias:
+                    - Valor de cota disponível na data de cotização.
+                    - Fechamento na data de cotização.
+                Tarefas a executar:
+                    - Atualiza a boleta de CPR de cotização com a data de pagamento igual
+                à data de cotização.
+                    - Cria a movimentação e a quantidade do ativo.
+                    - Atualizar estado.
+            Transição 4 - Pendente de liquidação -> Concluído.
+                Condições necessárias:
+                    - Fechamento na data de liquidação.
+                Tarefas a executar:
+                    - Atualizar estado.
+            Transição 5 - Pendente de cotização -> Pendente de informação de cotização
+                Condições necessárias:
+                    - Valor da cota indisponível no dia de cotização.
+                    - Fechamento na data de cotização.
+                Tarefas a executar:
+                    - Atualizar estado.
+            Transição 6 - Pendente de informação de cotização -> Concluído.
+                Condições necessárias:
+                    - Informação da cota disponibilizada.
+                    - Fechamento na data em que a cota é disponibilizada.
+                Tarefas a executar:
+                    - A data de pagamento da boleta de CPR de cotização deve ser
+                    atualizada com a data de inserção do valor da cota.
+                    - A quantidade e a movimentação do ativo também são criados com base
+                    na data de inserção do valor da cota.
+                    - Atualizar estado.
+            Transição 7 - Pendente de cotização e liquidação -> pendente de liquidação e informação de cotização.
+                Condições necessárias:
+                    - Informação da cota indisponível na data de cotização
+                    - Fechamento na data de cotização.
+                Tarefas a executar:
+                    - Criação de uma boleta de CPR de cotização sem data de pagamento
+                    definida e data de início igual à data de cotização.
+                    - Criação de uma boleta de CPR de liquidação, com valor financeiro
+                    contrário à boleta de cotização, data inicial igual à data de
+                    cotização, e data de pagamento igual à data de liquidação.
+                    - Criação de uma provisão.
+                    - Atualizar estado.
+            Transição 8 - Pendente de liquidação e informação de cotização -> concluído.
+                Condições necessárias:
+                    - Fechamento na data de liquidação;
+                    - Cota disponível na data de liquidação.
+                Tarefas a executar:
+                    - Atualização da data de pagamento da boleta de CPR com a data
+                    de inserção do valor da cota no sistema.
+                    - Criação da movimentação e quantidade do ativo.
+                    - Atualzar estado.
+            Transição 9 - Pendente de liquidação e informação de cotização -> Pendente de informação de cotização.
+                Condições necessárias:
+                    - Fechamento na data de liquidação
+                    - Cota indisponível na data de liquidação.
+                Tarefas a executar:
+                    - Apenas atualiza o estado.
         """
         if self.fechada == False:
+            if self.estado == ESTADO[5][0]: # Pendente de liquidação e cotização.
+                """
+                Se a boleta está pendente de cotização, ainda é necessário criar a
+                boleta de CPR de cotização. Se, na data de referencia do
+                fechamento, o valor da cota não estiver disponível, gera uma
+                boleta sem data de pagamento.
+                Deve gerar a boleta de CPR apenas quando a data de referencia
+                for igual à data de cotização.
+                """
+                pass
+
+            if self.cotizavel() == True:
+                self.clean_preco()
+                self.clean_quantidade()
+                self.clean_financeiro()
+                self.criar_boleta_CPR()
+
             if self.boleta_provisao.all().exists() == False:
                 provisao = BoletaProvisao(
                     descricao=self.operacao + " de " + self.ativo.Nome,
@@ -995,9 +1087,85 @@ class BoletaFundoOffshore(models.Model):
         variação de quantidade e, no cálculo do retorno do ativo, não haja
         um retorno errado devido a esse descasamento
         """
+        if self.relacao_movimentacao.all().exists() == False:
+            self.clean_financeiro()
+            mov = fm.Movimentacao(
+                valor=self.financeiro,
+                fundo=self.fundo,
+                data=self.data_cotizacao,
+                content_object=self,
+                objeto_movimentacao=self.ativo
+            )
+            mov.full_clean()
+            mov.save()
 
     def criar_quantidade(self):
-        pass
+        """
+        Cria a variação de quantidade do ativo sendo negociado.
+        """
+        if self.relacao_quantidade.all().exists() == False:
+            self.clean_quantidade()
+            qtd = fm.Quantidade(
+                qtd=self.quantidade,
+                fundo=self.fundo,
+                data=self.data_cotizacao,
+                content_object=self,
+                objeto_quantidade=self.ativo
+            )
+            qtd.full_clean()
+            qtd.save()
+
+    def criar_boleta_CPR_cotizacao(self, data_referencia=None):
+        """
+        Cria uma boleta de cotização com as informações da boleta. Caso não
+        haja um valor da cota, deve criar uma boleta de CPR sem data de
+        cotização.
+        """
+        if self.boleta_CPR.all().filter(valor_cheio=self.financeiro).exists() == False:
+            # Verifica se há preço. Se não houver, cria uma boleta de CPR sem
+            # data de pagamento
+            if self.preco == None:
+                if self.data_liquidacao < self.data_cotizacao:
+                    cpr = BoletaCPR(
+                        descricao="Cotização de " + self.ativo.nome,
+                        valor_cheio=self.financeiro,
+                        data_pagamento=data_referencia,
+                        data_inicio=self.data_liquidacao,
+                        fundo=self.fundo
+                    )
+                    cpr.full_clean()
+                    cpr.save()
+                else:
+                    cpr = BoletaCPR(
+                        descricao="Cotização de " + self.ativo.nome,
+                        valor_cheio=self.financeiro,
+                        data_pagamento=data_referencia,
+                        data_inicio=self.cotizacao,
+                        fundo=self.fundo
+                    )
+                    cpr.full_clean()
+                    cpr.save()
+            else:
+                if self.data_liquidacao < self.data_cotizacao:
+                    cpr = BoletaCPR(
+                        descricao="Cotização de " + self.ativo.nome,
+                        valor_cheio=self.financeiro,
+                        data_pagamento=self.data_cotizacao,
+                        data_inicio=self.data_liquidacao,
+                        fundo=self.fundo
+                    )
+                    cpr.full_clean()
+                    cpr.save()
+                else:
+                    cpr = BoletaCPR(
+                        descricao="Cotização de " + self.ativo.nome,
+                        valor_cheio=self.financeiro,
+                        data_pagamento=None,
+                        data_inicio=self.data_cotizacao,
+                        fundo=self.fundo
+                    )
+                    cpr.full_clean()
+                    cpr.save()
 
 class BoletaEmprestimo(models.Model):
     """

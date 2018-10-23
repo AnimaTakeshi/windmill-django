@@ -356,7 +356,7 @@ class Cotista(models.Model):
     cota_media = models.DecimalField(max_digits=15, decimal_places=7, blank=True, null=True)
     # Se o cotista for um fundo gerido,
     fundo_cotista = models.ForeignKey('fundo.Fundo', on_delete=models.PROTECT,
-        null=True, blank=True, unique=True)
+        null=True, blank=True)
 
 
 class CertificadoPassivo(models.Model):
