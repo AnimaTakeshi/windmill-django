@@ -41,7 +41,8 @@ class BoletaAcaoAdmin(ImportExportModelAdmin):
     form = forms.FormBoletaAcao
 
     list_display = ('acao', 'data_operacao', 'data_liquidacao', 'corretora',
-        'fundo', 'operacao', 'quantidade', 'preco', 'caixa_alvo')
+        'fundo', 'operacao', 'quantidade', 'preco', 'caixa_alvo', )
+
     ordering = ('acao', 'fundo')
 
     actions = ['fechar_boleta']
@@ -97,7 +98,7 @@ class BoletaCPRAdmin(ImportExportModelAdmin):
     class Meta:
         model = models.BoletaCPR
 
-    list_display = ('descricao', 'fundo', 'valor_cheio', 'valor_diario', 'data_inicio', 'data_pagamento')
+    list_display = ('descricao', 'fundo', 'valor_cheio', 'valor_parcial', 'data_inicio', 'data_pagamento')
 
 @admin.register(models.BoletaProvisao)
 class BoletaProvisaoAdmin(ImportExportModelAdmin):

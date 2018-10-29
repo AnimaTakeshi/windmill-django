@@ -834,7 +834,8 @@ class BoletaFundoLocal(models.Model):
             cotista = fm.Cotista.objects.filter(fundo_cotista=self.fundo).first()
             if cotista is None:
                 # Se for o primeiro aporte do fundo, cria o cotista equivalente.
-                cotista = fm.Cotista(nome=self.fundo.nome)
+                cotista = fm.Cotista(nome=self.fundo.nome,
+                    fundo_cotista=self.fundo)
                 cotista.save()
             passivo = BoletaPassivo(
                 cotista=cotista,
@@ -843,7 +844,7 @@ class BoletaFundoLocal(models.Model):
                 data_cotizacao=self.data_cotizacao,
                 data_liquidacao=self.data_liquidacao,
                 operacao=self.operacao,
-                fundo=self.ativo,
+                fundo=self.ativo.gestao,
                 cota=self.preco,
                 content_object=self
             )
@@ -894,6 +895,7 @@ class BoletaFundoOffshore(models.Model):
     boleta_CPR = GenericRelation('BoletaCPR', related_query_name='CPR')
     relacao_quantidade = GenericRelation(Quantidade, related_query_name='qtd_fundo_off')
     relacao_movimentacao = GenericRelation(Movimentacao, related_query_name='mov_fundo_off')
+    boleta_passivo = GenericRelation('BoletaPassivo', related_query_name='passivo')
 
     def clean_preco(self):
         """
@@ -901,7 +903,7 @@ class BoletaFundoOffshore(models.Model):
         disponível.
         """
         if self.cotizavel():
-            self.preco = mm.Preco.objects.filter(ativo=self.ativo, data_referencia=data_cotizacao).first().preco_fechamento
+            self.preco = mm.Preco.objects.filter(ativo=self.ativo, data_referencia=self.data_cotizacao).first().preco_fechamento
         else:
             raise ValueError(_("Valor de cotização indisponível."))
 
@@ -939,22 +941,34 @@ class BoletaFundoOffshore(models.Model):
         else:
             return False
 
+    def atualizar(self):
+        """
+        Verifica no sistem se há informações de valor de cota parar atualizar.
+        Se houver, atualiza o preço da boleta e quantidade de cotas.
+        """
+        if self.cotizavel() == True:
+            mm.Preco.objects.filter(ativo=self.ativo, data_referencia=self.data_cotizacao)
+            self.preco = mm.Preco.objects.get(ativo=self.ativo, data_referencia=self.data_cotizacao).preco_fechamento
+            self.quantidade = (self.financeiro/self.preco).quantize(decimal.Decimal('1.000000'))
+
     def cotizavel(self):
         """
         Determina se é possível cotizar a boleta, calculando a quantidade de
         cotas que serão movimentadas na operação.
         """
-        if mm.Preco.objects.filter(ativo=self.ativo, data_referencia=data_cotizacao).exists():
+        if mm.Preco.objects.filter(ativo=self.ativo, data_referencia=self.data_cotizacao).exists():
             return True
         return False
 
     def passivo(self):
         """
-        Determina se a boleta
+        Determina se a boleta opera um ativo que é de nossa gestão, gerando uma
+        boleta de passivo para o fundo sendo operado.
         """
+        return self.ativo.gerido()
 
     def fechar_boleta(self, data_referencia):
-        """
+        """ datetime -> None
         CRIAÇÃO DE BOLETAS BASEADA NA TRANSIÇÃO DE ESTADOS:
             5.1.1 Boletagem de Operação no Manual Windmill:
             As transições ocorrem ao fechar a boleta, de acordo com as informações
@@ -994,6 +1008,7 @@ class BoletaFundoOffshore(models.Model):
                     - Atualizar estado.
             Transição 4 - Pendente de liquidação -> Concluído.
                 Condições necessárias:
+                    - Liquidação da boleta de provisão
                     - Fechamento na data de liquidação.
                 Tarefas a executar:
                     - Atualizar estado.
@@ -1041,46 +1056,132 @@ class BoletaFundoOffshore(models.Model):
                 Tarefas a executar:
                     - Apenas atualiza o estado.
         """
-        if self.fechada == False:
-            if self.estado == ESTADO[5][0]: # Pendente de liquidação e cotização.
-                """
-                Se a boleta está pendente de cotização, ainda é necessário criar a
-                boleta de CPR de cotização. Se, na data de referencia do
-                fechamento, o valor da cota não estiver disponível, gera uma
-                boleta sem data de pagamento.
-                Deve gerar a boleta de CPR apenas quando a data de referencia
-                for igual à data de cotização.
-                """
-                pass
+        if self.estado != self.ESTADO[5][0]:
+            if self.estado == self.ESTADO[4][0]: # Pendente de liquidação e cotização.
+                if self.financeiro != None and data_referencia == self.data_liquidacao:
+                    """
+                    Transição 1 - Pendente de liquidação e cotização -> Pendente de cotização
+                    """
+                    self.criar_boleta_CPR_cotizacao()
+                    self.criar_provisao()
+                    self.estado = self.ESTADO[0][0]
+                    self.save()
 
-            if self.cotizavel() == True:
+                elif self.financeiro != None and (self.preco != None or self.cotizavel()) and \
+                    data_referencia == self.data_cotizacao:
+                    """
+                    Transição 2 - Pendente de liquidação e cotização -> Pendente de liquidação.
+                    """
+                    if self.preco == None:
+                        self.clean_preco()
+                        self.clean_quantidade()
+                    if self.quantidade == None:
+                        self.quantidade = (self.financeiro/self.preco).quantize(decimal.Decimal('1.000000'))
+                    self.criar_boleta_CPR_liquidacao()
+                    self.criar_provisao()
+                    self.criar_movimentacao()
+                    self.criar_quantidade()
+                    if self.passivo():
+                        self.criar_boleta_passivo()
+                    self.estado = self.ESTADO[1][0]
+                    self.save()
+
+                elif self.financeiro != None and self.cotizavel() == False and \
+                    data_referencia == self.data_cotizacao and self.preco == None:
+
+                    """
+                    Transição 7 - Pendente de cotização e liquidação -> pendente de liquidação e informação de cotização.
+                    """
+                    self.criar_boleta_CPR_cotizacao()
+                    self.criar_boleta_CPR_liquidacao()
+                    self.criar_provisao()
+                    self.estado = self.ESTADO[3][0]
+                    self.criar_boleta_passivo()
+                    self.save()
+
+            elif self.estado == self.ESTADO[0][0] and self.cotizavel() == True and data_referencia == self.data_cotizacao:
+                """
+                Transição 3 - Pendente de cotização -> Concluído
+                """
+                boleta = self.boleta_CPR.filter(valor_cheio=self.financeiro).first()
+                boleta.data_pagamento = data_referencia
+                boleta.save()
                 self.clean_preco()
                 self.clean_quantidade()
-                self.clean_financeiro()
-                self.criar_boleta_CPR()
+                self.criar_movimentacao(data_referencia)
+                self.criar_quantidade(data_referencia)
+                if self.passivo():
+                    self.criar_boleta_passivo()
+                self.save()
 
-            if self.boleta_provisao.all().exists() == False:
-                provisao = BoletaProvisao(
-                    descricao=self.operacao + " de " + self.ativo.Nome,
-                    caixa_alvo=self.caixa_alvo,
-                    fundo=self.fundo,
-                    data_pagamento=self.data_liquidacao,
-                    financeiro=self.financeiro,
-                    content_object=self
-                )
-                provisao.full_clean()
-                provisao.save()
-            if self.data_cotizacao < self.data_liquidacao:
-                # TODO: Verificar se há preço de cotização para criar a quantidade
-                # e movimentação.
-                # Caso não haja, deve criar as duas boletas de CPR
-                pass
-            elif self.data_cotizacao >= self.data_liquidacao:
-                # Criar boleta de CPR de cotização.
-                # Verificar se a data de referencia para o fechamento.
-                pass
+            elif self.estado == self.ESTADO[1][0] and data_referencia == self.data_liquidacao:
+                """
+                Transição 4 - Pendente de liquidação -> Concluído
+                """
+                self.estado = self.ESTADO[5][0]
+                self.save()
 
-    def criar_movimentacao(self):
+            elif self.estado == self.ESTADO[0][0] and data_referencia == self.data_cotizacao and \
+                self.cotizavel() == False:
+                """
+                Transição 5 - Pendente de cotização -> Pendente de informação de cotização
+                """
+                self.estado = self.ESTADO[2][0]
+                if self.passivo():
+                    self.criar_boleta_passivo()
+                self.save()
+
+            elif self.estado == self.ESTADO[2][0] and self.cotizavel() == True and \
+                data_referencia > self.data_cotizacao:
+                """
+                Transição 6 - Pendente de informação de cotização -> Concluído
+                """
+                # Pegando boleta de cotização
+                boleta = self.boleta_CPR.filter(valor_cheio=self.financeiro).first()
+                boleta.data_pagamento = data_referencia
+                boleta.save()
+                self.clean_preco()
+                self.clean_quantidade()
+                self.criar_movimentacao(data_referencia)
+                self.criar_quantidade(data_referencia)
+                self.estado = self.ESTADO[5][0]
+                if self.passivo():
+                    # Atualiza a boleta de passivo com o valor da cota.
+                    passivo = self.boleta_passivo.all().get(object_id=self.id)
+                    if passivo.cota == None:
+                        passivo.cota = self.preco
+                        passivo.save()
+                self.save()
+
+            elif self.estado == self.ESTADO[3][0] and \
+                (self.cotizavel() == True or self.preco != None) and \
+                data_referencia == self.data_liquidacao:
+                """
+                Transição 8 - Pendente de liquidação e informação de cotização -> concluído
+                """
+                # Pegando boleta de CPR de cotização
+                boleta = self.boleta_CPR.filter(valor_cheio=self.financeiro).first()
+                boleta.data_pagamento = data_referencia
+                self.clean_preco()
+                self.clean_quantidade()
+                self.criar_movimentacao(data_referencia)
+                self.criar_quantidade(data_referencia)
+                self.estado = self.ESTADO[5][0]
+                if self.passivo():
+                    passivo = self.boleta_passivo.all().get(object_id=self.id)
+                    if passivo.cota == None:
+                        passivo.cota = self.preco
+                        passivo.save()
+                boleta.save()
+            elif self.estado == self.ESTADO[3][0] and self.cotizavel() == False and\
+                self.preco == None and data_referencia == self.data_liquidacao:
+                """
+                Transição 9 - Pendente de liquidação e informação de cotização -> Pendente de informação de cotização.
+                """
+                self.estado = self.ESTADO[2][0]
+                self.save()
+
+    def criar_movimentacao(self, data_referencia=None):
         """
         Cria a movimentação do ativo. Deve ser criada no mesmo dia em que
         a quantidade do ativo é gerada, para que não haja descasamento da
@@ -1088,27 +1189,31 @@ class BoletaFundoOffshore(models.Model):
         um retorno errado devido a esse descasamento
         """
         if self.relacao_movimentacao.all().exists() == False:
+            if data_referencia == None:
+                data_referencia = self.data_cotizacao
             self.clean_financeiro()
             mov = fm.Movimentacao(
                 valor=self.financeiro,
                 fundo=self.fundo,
-                data=self.data_cotizacao,
+                data=data_referencia,
                 content_object=self,
                 objeto_movimentacao=self.ativo
             )
             mov.full_clean()
             mov.save()
 
-    def criar_quantidade(self):
+    def criar_quantidade(self, data_referencia=None):
         """
         Cria a variação de quantidade do ativo sendo negociado.
         """
         if self.relacao_quantidade.all().exists() == False:
+            if data_referencia == None:
+                data_referencia = self.data_cotizacao
             self.clean_quantidade()
             qtd = fm.Quantidade(
-                qtd=self.quantidade,
+                qtd=self.quantidade.quantize(decimal.Decimal('1.000000')),
                 fundo=self.fundo,
-                data=self.data_cotizacao,
+                data=data_referencia,
                 content_object=self,
                 objeto_quantidade=self.ativo
             )
@@ -1117,9 +1222,7 @@ class BoletaFundoOffshore(models.Model):
 
     def criar_boleta_CPR_cotizacao(self, data_referencia=None):
         """
-        Cria uma boleta de cotização com as informações da boleta. Caso não
-        haja um valor da cota, deve criar uma boleta de CPR sem data de
-        cotização.
+        Cria uma boleta de cotização com as informações da boleta.
         """
         if self.boleta_CPR.all().filter(valor_cheio=self.financeiro).exists() == False:
             # Verifica se há preço. Se não houver, cria uma boleta de CPR sem
@@ -1128,20 +1231,22 @@ class BoletaFundoOffshore(models.Model):
                 if self.data_liquidacao < self.data_cotizacao:
                     cpr = BoletaCPR(
                         descricao="Cotização de " + self.ativo.nome,
-                        valor_cheio=self.financeiro,
+                        valor_cheio=self.financeiro.quantize(decimal.Decimal('1.00')),
                         data_pagamento=data_referencia,
                         data_inicio=self.data_liquidacao,
-                        fundo=self.fundo
+                        fundo=self.fundo,
+                        content_object=self
                     )
                     cpr.full_clean()
                     cpr.save()
                 else:
                     cpr = BoletaCPR(
                         descricao="Cotização de " + self.ativo.nome,
-                        valor_cheio=self.financeiro,
+                        valor_cheio=self.financeiro.quantize(decimal.Decimal('1.00')),
                         data_pagamento=data_referencia,
-                        data_inicio=self.cotizacao,
-                        fundo=self.fundo
+                        data_inicio=self.data_cotizacao,
+                        fundo=self.fundo,
+                        content_object=self
                     )
                     cpr.full_clean()
                     cpr.save()
@@ -1149,23 +1254,87 @@ class BoletaFundoOffshore(models.Model):
                 if self.data_liquidacao < self.data_cotizacao:
                     cpr = BoletaCPR(
                         descricao="Cotização de " + self.ativo.nome,
-                        valor_cheio=self.financeiro,
-                        data_pagamento=self.data_cotizacao,
+                        valor_cheio=self.financeiro.quantize(decimal.Decimal('1.00')),
+                        data_pagamento=data_referencia,
                         data_inicio=self.data_liquidacao,
-                        fundo=self.fundo
+                        fundo=self.fundo,
+                        content_object=self
                     )
                     cpr.full_clean()
                     cpr.save()
                 else:
                     cpr = BoletaCPR(
                         descricao="Cotização de " + self.ativo.nome,
-                        valor_cheio=self.financeiro,
-                        data_pagamento=None,
+                        valor_cheio=self.financeiro.quantize(decimal.Decimal('1.00')),
+                        data_pagamento=data_referencia,
                         data_inicio=self.data_cotizacao,
-                        fundo=self.fundo
+                        fundo=self.fundo,
+                        content_object=self
                     )
                     cpr.full_clean()
                     cpr.save()
+
+    def criar_boleta_CPR_liquidacao(self, data_referencia=None):
+        """
+        Cria uma boleta relacionada à liquidação da movimentação.
+        Ela deve ter um valor contrário ao valor financeiro da boleta de
+        movimentação.
+        """
+        if self.boleta_CPR.all().filter(valor_cheio=-self.financeiro).exists() == False:
+            cpr = BoletaCPR(
+                descricao="Liquidação de " + self.ativo.nome,
+                valor_cheio=-self.financeiro.quantize(decimal.Decimal('1.00')),
+                data_pagamento=self.data_liquidacao,
+                data_inicio=self.data_cotizacao,
+                fundo=self.fundo,
+                content_object=self
+            )
+            cpr.full_clean()
+            cpr.save()
+
+    def criar_provisao(self):
+        """
+        Cria provisão com base na data de liquidação da operação.
+        """
+        if self.boleta_provisao.all().exists() == False:
+            provisao = BoletaProvisao(
+                descricao=self.operacao + " de " + self.ativo.nome,
+                caixa_alvo=self.caixa_alvo,
+                fundo=self.fundo,
+                data_pagamento=self.data_liquidacao,
+                financeiro=-self.financeiro.quantize(decimal.Decimal('1.00')),
+                content_object=self
+            )
+            provisao.full_clean()
+            provisao.save()
+
+    def criar_boleta_passivo(self):
+        """
+        Cria boleta de passivo, caso o ativo negociado seja um fundo gerido.
+        """
+        if self.boleta_passivo.all().exists() == False:
+            cotista = fm.Cotista.objects.filter(fundo_cotista=self.fundo).first()
+            if cotista == None:
+                cotista = fm.Cotista(
+                    nome=self.fundo.nome,
+                    fundo_cotista=self.fundo
+                )
+                cotista.save()
+
+            passivo = BoletaPassivo(
+                cotista = cotista,
+                valor=self.financeiro.quantize(decimal.Decimal('1.00')),
+                data_movimentacao=self.data_operacao,
+                data_cotizacao=self.data_cotizacao,
+                data_liquidacao=self.data_liquidacao,
+                operacao=self.operacao,
+                fundo=self.ativo.gestao,
+                cota=self.preco,
+                content_object=self
+            )
+            passivo.full_clean()
+            passivo.save()
+
 
 class BoletaEmprestimo(models.Model):
     """
@@ -1525,11 +1694,17 @@ class BoletaProvisao(models.Model):
     Boleta para registrar despesas a serem pagas por um fundo
     """
 
+    ESTADO = (
+        ("Pendente", "Pendente"),
+        ("Liquidado", "Liquidado")
+    )
+
     descricao = models.CharField("Descrição", max_length=50)
     caixa_alvo = models.ForeignKey('ativos.Caixa', on_delete=models.PROTECT)
     fundo = models.ForeignKey('fundo.Fundo', on_delete=models.PROTECT)
     data_pagamento = models.DateField()
     financeiro = models.DecimalField(max_digits=20, decimal_places=2)
+    estado = models.CharField(max_length=9, choices=ESTADO, default=ESTADO[0][0])
 
     relacao_quantidade = GenericRelation(Quantidade, related_query_name='qtd_provisao')
     relacao_movimentacao = GenericRelation(Movimentacao, related_query_name='mov_provisao')
@@ -1547,6 +1722,25 @@ class BoletaCPR(models.Model):
     """
     Boleta para registrar CPR dos fundos.
     """
+
+    # Tipo de CPR:
+    # Diarização - o valor do CPR acumula de acordo com a capitalização
+    # Diferimento - o valor é descontado pelo seu valor parcial
+    # CPR - Não tem nenhum tipo de acúmulo ou desconto
+    TIPO = (
+        ("Diarização", "Diarização"),
+        ('Diferimento', 'Diferimento'),
+        ("CPR", "CPR")
+    )
+
+    # Capitalização - A diarização/diferimento afeta o valor do CPR na
+    # periodicidade da capitalização.
+    CAPITALIZACAO = (
+        ("Diária", "Diária"),
+        ("Mensal", "Mensal"),
+        ("Nenhuma", "Nenhuma")
+    )
+
     # Descrição sobre o que é o CPR.
     descricao = models.CharField("Descrição", max_length=50)
     # Fundo relativo ao CPR
@@ -1555,7 +1749,7 @@ class BoletaCPR(models.Model):
     valor_cheio = models.DecimalField(max_digits=12, decimal_places=2,
         blank=True, null=True)
     # Valor parcial do CPR, no caso de boletar CPR que acumula diariamente
-    valor_diario = models.DecimalField(max_digits=12, decimal_places=2,
+    valor_parcial = models.DecimalField(max_digits=12, decimal_places=2,
         blank=True, null=True)
     # Data em que o CPR deve começar a ser considerado no fundo
     data_inicio = models.DateField()
@@ -1564,7 +1758,12 @@ class BoletaCPR(models.Model):
     # Data de fim da capitalização do CPR.
     data_vigencia_fim = models.DateField(null=True, blank=True)
     # Data em que o CPR deve sair da carteira.
-    data_pagamento = models.DateField()
+    data_pagamento = models.DateField(null=True, blank=True)
+    # Tipo de CPR
+    tipo = models.CharField(max_length=12, choices=TIPO, default=TIPO[2][0])
+    # Capitalização indica o período com que o CPR acumula
+    capitalizacao = models.CharField(max_length=7, choices=CAPITALIZACAO,
+        default=CAPITALIZACAO[2][0])
 
     relacao_quantidade = GenericRelation(Quantidade, related_query_name='qtd_cpr')
     relacao_movimentacao = GenericRelation(Movimentacao, related_query_name='mov_cpr')
@@ -1584,6 +1783,20 @@ class BoletaCPR(models.Model):
 class BoletaPassivo(models.Model):
     """
     Boleta de movimentação de passivo de fundos.
+    Deve criar um certificado de passivo quando a boleta for cotizável.
+    A boleta de passivo é responsável pela notação de informações relevantes
+    de passivo e movimentações de caixa e cálculo de IR, se for o caso de
+    resgate de cotista pessoa física.
+
+    No período entre cotização e liquidação, o fundo deve possuir um CPR
+    do tamanho da movimentação.
+
+    Na data de cotização, o fundo deve emitir cotas (criar mais cotas -
+    no caso de uma aplicação) ou consumir cotas (destruir cotas -
+    no caso de um resgate).
+
+    As cotas totais de um fundo deve ser igual ao somatório de cotas aplicadas
+    de todos os certificados de passivo.
     """
 
     OPERACAO = (
@@ -1598,9 +1811,142 @@ class BoletaPassivo(models.Model):
     data_cotizacao = models.DateField()
     data_liquidacao = models.DateField()
     operacao = models.CharField(max_length=15, choices=OPERACAO)
-    fundo = models.ForeignKey('ativos.Ativo', on_delete=models.PROTECT)
-    cota = models.DecimalField(max_digits=15, decimal_places=6)
+    fundo = models.ForeignKey('fundo.Fundo', on_delete=models.PROTECT)
+    cota = models.DecimalField(max_digits=15, decimal_places=6, null=True, blank=True)
+    certificado_passivo = models.ManyToManyField('fundo.CertificadoPassivo',
+        blank=True, null=True)
 
+    # ForeignKey genérica para ligar com boletas de Aporte em fundo local ou offshore, quando for aplicável.
     content_type = models.ForeignKey(ContentType, on_delete=models.PROTECT, null=True, blank=True)
     object_id = models.PositiveIntegerField(null=True, blank=True)
     content_object = GenericForeignKey('content_type', 'object_id')
+
+    # GenericRelation para a boleta de CPR e provisão.
+    boleta_provisao = GenericRelation('BoletaProvisao', related_query_name='provisao')
+    boleta_CPR = GenericRelation('BoletaCPR', related_query_name='CPR')
+
+
+    def fechar_boleta(self):
+        """
+        Cria boletas de CPR e provisão.
+        Se houver todas as informações, consome/cria um certificado de passivo.
+        """
+        self.criar_provisao()
+        self.criar_boleta_CPR()
+        if self.operacao == self.OPERACAO[0][0]:
+            self.gerar_certificado()
+        else:
+            self.consumir_certificado()
+
+    def criar_provisao(self):
+        """
+        Cria uma boleta de provisão de acordo com as informações na boleta.
+        """
+        if self.boleta_provisao.all().exists() == False:
+            financeiro = abs(self.valor)
+            if self.operacao == self.OPERACAO[0][0]:
+                financeiro = abs(self.valor)
+            else:
+                financeiro = -abs(self.valor)
+            provisao = BoletaProvisao(
+                descricao=self.cotista.nome + ": " + self.operacao,
+                caixa_alvo=self.fundo.caixa_padrao,
+                fundo=self.fundo,
+                data_pagamento=self.data_liquidacao,
+                financeiro=financeiro,
+                estado=BoletaProvisao.ESTADO[0][0],
+                content_object=self
+            )
+            provisao.full_clean()
+            provisao.save()
+
+    def criar_boleta_CPR(self):
+        """
+        Cria uma boleta de provisão de acordo com as informações na boleta.
+        Quatro casos possíveis para boletas de CPR:
+        Resgate:
+            - Data de cotização anterior à data de liquidação
+            - Data de liquidação anterior à data de cotização
+        Aplicação:
+            - Data de cotização anterior à data de liquidação
+            - Data de liquidação anterior à data de cotização
+        O CPR possui um valor negativo nos seguintes cenários:
+            - Aplicação - liquidação anterior à cotização
+            - Resgate - cotização anterior à liquidação
+        O CPR possui um valor positivo nos seguintes cenários:
+            - Aplicação - cotização anteiror à liquidação
+            - Resgate - liquidação anterior à cotização.
+        """
+        if self.boleta_CPR.all().exists() == False:
+            if (self.operacao == self.OPERACAO[0][0] and self.data_cotizacao < self.data_liquidacao) or \
+                (self.operacao != self.OPERACAO[0][0] and self.data_liquidacao < self.data_cotizacao):
+                if self.data_cotizacao < self.data_liquidacao:
+                    data_inicio = self.data_cotizacao
+                    data_pagamento = self.data_liquidacao
+                else:
+                    data_inicio = self.data_liquidacao
+                    data_pagamento = self.data_cotizacao
+                cpr = BoletaCPR(
+                    descricao=self.operacao + ": " + self.fundo.nome,
+                    fundo=self.fundo,
+                    valor_cheio=abs(self.valor),
+                    data_inicio=data_inicio,
+                    data_pagamento=data_pagamento,
+                    content_object=self
+                )
+            else:
+                if self.data_cotizacao < self.data_liquidacao:
+                    data_inicio = self.data_cotizacao
+                    data_pagamento = self.data_liquidacao
+                else:
+                    data_inicio = self.data_liquidacao
+                    data_pagamento = self.data_cotizacao
+                cpr = BoletaCPR(
+                    descricao=self.operacao + ": " + self.fundo.nome,
+                    fundo=self.fundo,
+                    valor_cheio=-abs(self.valor),
+                    data_inicio=data_inicio,
+                    data_pagamento=data_pagamento,
+                    content_object=self
+                )
+            cpr.full_clean()
+            cpr.save()
+
+    def gerar_certificado(self):
+        if (self.certificado_passivo.all().exists()==False):
+            qtd = (self.valor/self.cota).quantize(decimal.Decimal('1.0000000'))
+            certificado = fm.CertificadoPassivo(
+                cotista=self.cotista,
+                qtd_cotas=qtd,
+                valor_cota=self.cota,
+                cotas_aplicadas=qtd,
+                data=self.data_cotizacao
+            )
+            certificado.full_clean()
+            certificado.save()
+            self.certificado_passivo.add(certificado)
+            self.save()
+
+    def consumir_certificado(self):
+        """
+        Deve buscar o certificado mais antigo que ainda tenha cotas a serem
+        resgatadas e os resgata.
+        """
+        # Só consome os certificados se for possível calcular a quantidade de
+        # cotas a serem consumidas - NO CASO DE RESGATE NÃO TOTAL.
+        if (self.certificado_passivo.all().exists()==False and self.cota!=None and self.valor!=None and self.operacao==self.OPERACAO[1][0]):
+            cotas_totais = abs(self.valor/self.cota)
+            cotas_consumidas = cotas_totais
+            while cotas_consumidas > 0:
+                certificado_consumido = fm.CertificadoPassivo.objects.filter(cotas_aplicadas__gt=0).earliest('data')
+                if cotas_consumidas > certificado_consumido.cotas_aplicadas:
+                    cotas_consumidas -= certificado_consumido.cotas_aplicadas
+                    certificado_consumido.cotas_aplicadas = 0
+                else:
+                    certificado_consumido.cotas_aplicadas = (certificado_consumido.cotas_aplicadas - cotas_consumidas).quantize(decimal.Decimal('1.0000000'))
+                    cotas_consumidas = 0
+                self.certificado_passivo.add(certificado_consumido)
+                certificado_consumido.save()
+                self.save()
+        if (self.operacao == self.OPERACAO[2][0]):
+            pass

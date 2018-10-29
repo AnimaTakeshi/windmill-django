@@ -354,9 +354,9 @@ class Cotista(models.Model):
     # Ela é determinada pela média ponderada do valor da cota dos certificados
     # de passivo pela quantidade de cotas ainda aplicada.
     cota_media = models.DecimalField(max_digits=15, decimal_places=7, blank=True, null=True)
-    # Se o cotista for um fundo gerido,
+    # Se o cotista for um fundo gerido, preenche este campo
     fundo_cotista = models.ForeignKey('fundo.Fundo', on_delete=models.PROTECT,
-        null=True, blank=True)
+        null=True, blank=True, unique=True)
 
 
 class CertificadoPassivo(models.Model):
@@ -367,7 +367,7 @@ class CertificadoPassivo(models.Model):
     """
     # Cotista que fez a movimentação de passivo.
     cotista = models.ForeignKey('fundo.Cotista', on_delete=models.PROTECT)
-    # Quantidade de cotas que foram movimentadas.
+    # Quantidade de cotas que foram aplicadas originalmente.
     qtd_cotas = models.DecimalField(max_digits=15, decimal_places=7)
     # Valor da cota no momento da aplicação
     valor_cota = models.DecimalField(max_digits=10, decimal_places=2)
@@ -375,9 +375,8 @@ class CertificadoPassivo(models.Model):
     # Conforme o cotista realiza resgates do fundo, cotas de certificados mais
     # antigos são resgatadas, aumentando o valor da cota média.
     cotas_aplicadas = models.DecimalField(max_digits=15, decimal_places=7)
-    # Boleta de passivo que registrou a movimentação
-    boleta_passivo = models.ForeignKey('boletagem.BoletaPassivo', on_delete=models.PROTECT)
-
+    # Data da aplicação
+    data = models.DateField()
 
 class CPR(models.Model):
     """
@@ -392,5 +391,5 @@ class CPR(models.Model):
     # Chave estrangeira para a boleta originadora do CPR, caso aplicável.
     content_type = models.ForeignKey(ContentType, on_delete=models.PROTECT,
         related_name='boleta', blank=True, null=True)
-    object_id = models.PositiveIntegerField()
+    object_id = models.PositiveIntegerField(blank=True, null=True)
     content_object = GenericForeignKey('content_type', 'object_id')

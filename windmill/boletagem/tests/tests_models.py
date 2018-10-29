@@ -926,7 +926,7 @@ class BoletaFundoLocalUnitTest(TestCase):
             ativo=self.ativo_fundo_gerido,
             data_operacao=datetime.date(year=2018, month=10, day=15),
             data_cotizacao=datetime.date(year=2018, month=10, day=17),
-            data_liquidacao=datetime.date(year=2018, month=10, day=19),
+            data_liquidacao=datetime.date(year=2018, month=10, day=20),
             operacao="Aplicação",
             financeiro=1300000
         )
@@ -1250,7 +1250,7 @@ class BoletaFundoLocalUnitTest(TestCase):
         self.assertEqual(passivo.data_cotizacao, copia.data_cotizacao)
         self.assertEqual(passivo.data_liquidacao, copia.data_liquidacao)
         self.assertEqual(passivo.operacao, copia.operacao)
-        self.assertEqual(passivo.fundo.id, copia.ativo.id)
+        self.assertEqual(passivo.fundo.id, copia.ativo.gestao.id)
         self.assertEqual(passivo.cota, copia.preco)
         self.assertEqual(passivo.content_object, copia)
 
@@ -1266,8 +1266,8 @@ class BoletaFundoOffshoreUnitTest(TestCase):
     Classe de Unit Tests da BoletaFundoOffshore
     """
     def setUp(self):
-        qtd = 1000
-        price = 1300
+        qtd = decimal.Decimal('1000').quantize(decimal.Decimal('1.000000'))
+        price = decimal.Decimal('1300').quantize(decimal.Decimal('1.000000'))
         self.boleta = mommy.make('boletagem.BoletaFundoOffshore',
             data_operacao=datetime.date(year=2018, month=10, day=15),
             data_cotizacao=datetime.date(year=2018, month=10, day=16),
@@ -1276,7 +1276,59 @@ class BoletaFundoOffshoreUnitTest(TestCase):
             quantidade=qtd,
             estado=bm.BoletaFundoOffshore.ESTADO[4][0],
             preco=price,
-            financeiro=qtd*price
+            financeiro=decimal.Decimal(qtd*price).quantize(decimal.Decimal('1.000000'))
+        )
+
+        # Setup de fundos geridos e não geridos
+        self.gestora_anima = mommy.make('fundo.Gestora',
+            nome='SPN',
+            anima=True
+        )
+
+        self.fundo_gerido = mommy.make('fundo.Fundo',
+            nome='Veredas',
+            gestora=self.gestora_anima,
+            data_de_inicio=datetime.date(year=2014, month=10, day=27),
+            categoria="Fundo de Ações"
+        )
+
+        self.ativo_fundo_gerido = mommy.make('ativos.Fundo_Offshore',
+            gestao=self.fundo_gerido
+        )
+
+        self.boleta_ativo_gerido = mommy.make('boletagem.BoletaFundoOffshore',
+            ativo=self.ativo_fundo_gerido,
+            data_operacao=datetime.date(year=2018, month=10, day=15),
+            data_cotizacao=datetime.date(year=2018, month=10, day=16),
+            data_liquidacao=datetime.date(year=2018, month=10, day=19),
+            operacao=bm.BoletaFundoOffshore.OPERACAO[0][0],
+            quantidade=qtd,
+            estado=bm.BoletaFundoOffshore.ESTADO[4][0],
+            preco=price,
+            financeiro=decimal.Decimal(qtd*price).quantize(decimal.Decimal('1.000000'))
+        )
+
+        gestora_qualquer = mommy.make('fundo.Gestora',
+            anima=False
+        )
+
+        fundo_qualquer = mommy.make('fundo.Fundo',
+            gestora=gestora_qualquer
+        )
+
+        ativo_fundo_qualquer = mommy.make('ativos.Fundo_Offshore',
+            gestao=fundo_qualquer
+        )
+        self.boleta_ativo_qualquer = mommy.make('boletagem.BoletaFundoOffshore',
+            ativo=ativo_fundo_qualquer,
+            data_operacao=datetime.date(year=2018, month=10, day=15),
+            data_cotizacao=datetime.date(year=2018, month=10, day=16),
+            data_liquidacao=datetime.date(year=2018, month=10, day=19),
+            operacao=bm.BoletaFundoOffshore.OPERACAO[0][0],
+            quantidade=qtd,
+            estado=bm.BoletaFundoOffshore.ESTADO[4][0],
+            preco=price,
+            financeiro=decimal.Decimal(qtd*price).quantize(decimal.Decimal('1.000000'))
         )
 
     def test_alinha_operacao_quantidade(self):
@@ -1296,6 +1348,29 @@ class BoletaFundoOffshoreUnitTest(TestCase):
         copia.clean_quantidade()
         self.assertEqual(copia.quantidade, -1000)
         self.assertEqual(copia.operacao, "Resgate")
+
+    def test_atualizar_preco_quantidade(self):
+        """
+        Quando o preço da cota for disponibilizado, testa se o método atualizar()
+        atualiza o preço e quantidade de cotas na boleta.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.quantidade = None
+        preco = mommy.make('mercado.Preco',
+            ativo=copia.ativo,
+            data_referencia=copia.data_cotizacao,
+            preco_fechamento=copia.preco
+        )
+        preco.full_clean()
+        preco.save()
+        copia.preco = None
+        copia.save()
+        self.assertEqual(copia.preco, None)
+        self.assertEqual(copia.quantidade, None)
+        copia.atualizar()
+        self.assertEqual(copia.preco, preco.preco_fechamento)
+        self.assertEqual(copia.quantidade, (copia.financeiro/preco.preco_fechamento).quantize(decimal.Decimal('1.000000')))
 
     def test_cria_quantidade(self):
         """
@@ -1339,17 +1414,16 @@ class BoletaFundoOffshoreUnitTest(TestCase):
         self.assertEqual(mov.fundo, copia.fundo)
         self.assertEqual(mov.data, copia.data_cotizacao)
 
-    @pytest.mark.xfail
     def test_cria_boleta_CPR_cotizacao(self):
         """
         Testa o método para criação de boleta de CPR para cotização da
-        movimentação.
+        movimentação. A boleta criada não tem data de pagamento.
         """
         copia = self.boleta
         copia.id = None
         copia.save()
         self.assertFalse(copia.boleta_CPR.all().exists())
-        copia.cria_boleta_CPR_cotizacao()
+        copia.criar_boleta_CPR_cotizacao()
         self.assertTrue(copia.boleta_CPR.all().exists())
 
         tipo = ContentType.objects.get_for_model(copia)
@@ -1357,11 +1431,9 @@ class BoletaFundoOffshoreUnitTest(TestCase):
 
         self.assertIsInstance(cpr, bm.BoletaCPR)
         self.assertEqual(cpr.valor_cheio, copia.financeiro)
-        self.assertEqual(cpr.data_inicio, copia.data_operacao)
-        self.assertEqual(cpr.data_pagamento, copia.data_cotizacao)
+        self.assertEqual(cpr.data_inicio, copia.data_cotizacao)
         self.assertEqual(cpr.fundo, copia.fundo)
 
-    @pytest.mark.xfail
     def test_cria_boleta_CPR_liquidacao(self):
         """
         Testa o método para criação de boleta de CPR para liquidação
@@ -1371,17 +1443,54 @@ class BoletaFundoOffshoreUnitTest(TestCase):
         copia.id = None
         copia.save()
         self.assertFalse(copia.boleta_CPR.all().exists())
-        copia.cria_boleta_CPR_cotizacao()
+        copia.criar_boleta_CPR_liquidacao()
         self.assertTrue(copia.boleta_CPR.all().exists())
 
         tipo = ContentType.objects.get_for_model(copia)
         cpr = bm.BoletaCPR.objects.get(content_type__pk=tipo.id, object_id=copia.id)
 
         self.assertIsInstance(cpr, bm.BoletaCPR)
-        self.assertEqual(cpr.valor_cheio, -copia.financeiro)
-        self.assertEqual(cpr.data_inicio, copia.data_operacao)
-        self.assertEqual(cpr.data_pagamento, copia.data_cotizacao)
+        self.assertEqual(cpr.valor_cheio, -copia.financeiro.quantize(decimal.Decimal('1.00')))
+        self.assertEqual(cpr.data_inicio, copia.data_cotizacao)
+        self.assertEqual(cpr.data_pagamento, copia.data_liquidacao)
         self.assertEqual(cpr.fundo, copia.fundo)
+
+    def test_passivo(self):
+        """
+        Testa o método passivo
+        """
+        self.assertTrue(self.boleta_ativo_gerido.passivo())
+        self.assertFalse(self.boleta_ativo_qualquer.passivo())
+
+    def test_cria_boleta_passivo(self):
+        """
+        Testa se consegue criar uma boleta de passivo com as informações
+        corretas
+        """
+        # Cria boleta de movimentação de fundo offshore com ativo gerido
+        copia = self.boleta_ativo_gerido
+        copia.id = None
+        copia.save()
+        # Verifica que não havia boleta de passivo antes.
+        self.assertFalse(copia.boleta_passivo.all().exists())
+        copia.criar_boleta_passivo()
+        # Verifica que foi criado boleta de passivo.
+        self.assertTrue(copia.boleta_passivo.all().exists())
+
+        # Buscando a boleta.
+        tipo = ContentType.objects.get_for_model(copia)
+        passivo = bm.BoletaPassivo.objects.get(content_type__pk=tipo.id,
+            object_id=copia.id)
+
+        self.assertEqual(passivo.cotista.nome, copia.fundo.nome)
+        self.assertEqual(passivo.valor, copia.financeiro)
+        self.assertEqual(passivo.data_movimentacao, copia.data_operacao)
+        self.assertEqual(passivo.data_cotizacao, copia.data_cotizacao)
+        self.assertEqual(passivo.data_liquidacao, copia.data_liquidacao)
+        self.assertEqual(passivo.operacao, copia.operacao)
+        self.assertEqual(passivo.fundo.id, copia.ativo.gestao.id)
+        self.assertEqual(passivo.cota, copia.preco)
+        self.assertEqual(passivo.content_object, copia)
 
     def test_fechamento_transicao_1(self):
         """
@@ -1400,12 +1509,1055 @@ class BoletaFundoOffshoreUnitTest(TestCase):
         """
         copia = self.boleta
         copia.id = None
+        copia.data_liquidacao = datetime.date(year=2018, month=10, day=16)
+        copia.data_cotizacao = datetime.date(year=2018, month=10, day=19)
         data_fechamento = copia.data_liquidacao
         copia.preco = None
-        copia.quantidade= None
-        copia.estado
+        copia.quantidade = None
         copia.save()
 
         self.assertFalse(copia.boleta_provisao.all().exists())
         self.assertFalse(copia.boleta_CPR.all().exists())
+        self.assertFalse(copia.relacao_quantidade.all().exists())
+        self.assertFalse(copia.relacao_movimentacao.all().exists())
         self.assertEqual(copia.estado, bm.BoletaFundoOffshore.ESTADO[4][0])
+        copia.fechar_boleta(data_referencia=data_fechamento)
+        self.assertTrue(copia.boleta_provisao.all().exists())
+
+        tipo = ContentType.objects.get_for_model(copia)
+        prov = bm.BoletaProvisao.objects.get(content_type__pk=tipo.id, object_id=copia.id)
+
+        self.assertIsInstance(prov, bm.BoletaProvisao)
+        self.assertEqual(prov.financeiro, -copia.financeiro.quantize(decimal.Decimal('1.00')))
+        self.assertEqual(prov.fundo, copia.fundo)
+        self.assertEqual(prov.data_pagamento, copia.data_liquidacao)
+        self.assertEqual(prov.caixa_alvo, copia.caixa_alvo)
+
+        self.assertTrue(copia.boleta_CPR.all().filter(valor_cheio=copia.financeiro).exists())
+
+        cpr = bm.BoletaCPR.objects.get(content_type__pk=tipo.id,
+            object_id=copia.id, valor_cheio=copia.financeiro)
+
+        self.assertIsInstance(cpr, bm.BoletaCPR)
+        self.assertEqual(cpr.valor_cheio, copia.financeiro.quantize(decimal.Decimal('1.00')))
+        self.assertEqual(cpr.fundo, copia.fundo)
+        self.assertEqual(cpr.data_inicio, copia.data_liquidacao)
+        self.assertIn("Cotização", cpr.descricao)
+        self.assertIn(copia.ativo.nome, cpr.descricao)
+
+        self.assertEqual(copia.estado, bm.BoletaFundoOffshore.ESTADO[0][0])
+
+    def test_fechamento_transicao_2(self):
+        """
+        Testa o fechamento nas condições da transição 2.
+        Transição 2 - Pendente de cotização e liquidação -> pendente de liquidação.
+            (Data de cotização anterior à data de liquidação)
+            Condições necessárias:
+                - Valor financeiro a liquidar disponível
+                - Valor das cotas disponível.
+                - Fechamento na data de cotização.
+            Tarefas a executar:
+                - Cria a boleta de provisão, para saída de caixa.
+                - Cria a boleta de CPR de liquidação, com valor financeiro inverso
+                à boleta de operação.
+                - Cria a quantidade e movimentação do ativo.
+                - Atualizar estado.
+        """
+        copia = self.boleta_ativo_qualquer
+        copia.id = None
+        data_fechamento = copia.data_cotizacao
+        copia.estado = copia.ESTADO[4][0]
+        copia.save()
+
+        self.assertFalse(copia.boleta_provisao.all().exists())
+        self.assertFalse(copia.boleta_CPR.all().filter(valor_cheio=-copia.financeiro).exists())
+        self.assertFalse(copia.relacao_quantidade.all().exists())
+        self.assertFalse(copia.relacao_movimentacao.all().exists())
+        self.assertEqual(copia.estado, bm.BoletaFundoOffshore.ESTADO[4][0])
+
+        copia.fechar_boleta(data_referencia=data_fechamento)
+
+        self.assertTrue(copia.boleta_provisao.all().exists())
+
+        tipo = ContentType.objects.get_for_model(copia)
+        prov = bm.BoletaProvisao.objects.get(content_type__pk=tipo.id, object_id=copia.id)
+
+        self.assertIsInstance(prov, bm.BoletaProvisao)
+        self.assertEqual(prov.financeiro, -copia.financeiro)
+        self.assertEqual(prov.fundo, copia.fundo)
+        self.assertEqual(prov.data_pagamento, copia.data_liquidacao)
+        self.assertEqual(prov.caixa_alvo, copia.caixa_alvo)
+
+        self.assertTrue(copia.boleta_CPR.all().filter(valor_cheio=-copia.financeiro).exists())
+
+        cpr = bm.BoletaCPR.objects.get(content_type__pk=tipo.id, \
+            object_id=copia.id, valor_cheio=-copia.financeiro.quantize(decimal.Decimal('1.00')))
+
+        self.assertIsInstance(cpr, bm.BoletaCPR)
+        self.assertEqual(cpr.valor_cheio, -copia.financeiro.quantize(decimal.Decimal('1.00')))
+        self.assertEqual(cpr.fundo, copia.fundo)
+        self.assertEqual(cpr.data_inicio, copia.data_cotizacao)
+        self.assertEqual(cpr.data_pagamento, copia.data_liquidacao)
+        self.assertIn("Liquidação", cpr.descricao)
+        self.assertIn(copia.ativo.nome, cpr.descricao)
+
+        self.assertTrue(copia.relacao_quantidade.all().exists())
+
+        qtd = fm.Quantidade.objects.get(content_type__pk=tipo.id, object_id=copia.id)
+
+        self.assertTrue(qtd.qtd, copia.quantidade)
+        self.assertTrue(qtd.fundo, copia.fundo)
+        self.assertTrue(qtd.data, copia.data_cotizacao)
+        self.assertTrue(qtd.objeto_quantidade, copia.ativo)
+        self.assertTrue(qtd.content_object, copia)
+
+        self.assertTrue(copia.relacao_movimentacao.all().exists())
+
+        mov = fm.Movimentacao.objects.get(content_type__pk=tipo.id, object_id=copia.id)
+
+        self.assertTrue(mov.valor, copia.financeiro)
+        self.assertTrue(mov.fundo, copia.fundo)
+        self.assertTrue(mov.data, copia.data_cotizacao)
+        self.assertTrue(mov.content_object, copia)
+        self.assertTrue(mov.objeto_movimentacao, copia.ativo)
+
+        self.assertEqual(copia.estado, bm.BoletaFundoOffshore.ESTADO[1][0])
+
+    def test_fechamento_transicao_2_ativo_gerido(self):
+        """
+        Testa o fechamento nas condições da transição 2.
+        Transição 2 - Pendente de cotização e liquidação -> pendente de liquidação.
+            (Data de cotização anterior à data de liquidação)
+            Condições necessárias:
+                - Valor financeiro a liquidar disponível
+                - Valor das cotas disponível.
+                - Fechamento na data de cotização.
+            Tarefas a executar:
+                - Cria a boleta de provisão, para saída de caixa.
+                - Cria a boleta de CPR de liquidação, com valor financeiro inverso
+                à boleta de operação.
+                - Cria a quantidade e movimentação do ativo.
+                - Atualizar estado.
+        """
+        copia = self.boleta_ativo_gerido
+        copia.id = None
+        data_fechamento = copia.data_cotizacao
+        copia.estado = copia.ESTADO[4][0]
+        copia.save()
+
+        self.assertFalse(copia.boleta_passivo.all().exists())
+
+        copia.fechar_boleta(data_referencia=data_fechamento)
+
+        self.assertTrue(copia.boleta_passivo.all().exists())
+
+        tipo = ContentType.objects.get_for_model(copia)
+
+        passivo = bm.BoletaPassivo.objects.get(content_type__pk=tipo.id, object_id=copia.id)
+
+        self.assertEqual(passivo.valor, copia.financeiro)
+        self.assertEqual(passivo.operacao, copia.operacao)
+        self.assertEqual(passivo.data_movimentacao, copia.data_operacao)
+        self.assertEqual(passivo.data_cotizacao, copia.data_cotizacao)
+        self.assertEqual(passivo.data_liquidacao, copia.data_liquidacao)
+        self.assertEqual(passivo.fundo, copia.ativo.gestao)
+        self.assertEqual(passivo.cota, copia.preco)
+        self.assertEqual(passivo.content_object, copia)
+
+    def test_fechamento_transicao_3(self):
+        """
+        Transição 3 - Pendente de cotização -> Concluído
+            Condições necessárias:
+                - Valor de cota disponível na data de cotização.
+                - Fechamento na data de cotização.
+            Tarefas a executar:
+                - Atualiza a boleta de CPR de cotização com a data de pagamento igual
+            à data de cotização.
+                - Cria a movimentação e a quantidade do ativo.
+                - Atualizar estado.
+        """
+        # Criando a boleta no estado Pendente de cotização
+        copia = self.boleta_estado_pendente_de_cotizacao()
+        preco = decimal.Decimal('1300').quantize(decimal.Decimal('1.000000'))
+        # Cria preço para refletir as pré-condições.
+        preco = mommy.make('mercado.Preco',
+            ativo=copia.ativo,
+            data_referencia=copia.data_cotizacao,
+            preco_fechamento=preco
+        )
+        preco.full_clean()
+        preco.save()
+
+        # Deve colocar a boleta no estado Pendente de cotização
+        copia.fechar_boleta(copia.data_liquidacao)
+        self.assertEqual(copia.ESTADO[0][0], bm.BoletaFundoOffshore.ESTADO[0][0])
+
+        self.assertFalse(copia.relacao_quantidade.all().exists())
+        self.assertFalse(copia.relacao_movimentacao.all().exists())
+        copia.fechar_boleta(copia.data_cotizacao)
+
+        tipo = ContentType.objects.get_for_model(copia)
+        cpr = bm.BoletaCPR.objects.get(content_type__pk=tipo.id, object_id=copia.id)
+
+        # Atualização da boleta de CPR com a data de pagamento
+        self.assertEqual(cpr.data_pagamento, copia.data_cotizacao)
+        self.assertEqual(copia.preco, preco.preco_fechamento)
+        self.assertEqual(copia.quantidade, copia.financeiro/preco.preco_fechamento)
+
+        # Verifica criação de quantidade e movimentação.
+        self.assertTrue(copia.relacao_quantidade.all().exists())
+        self.assertTrue(copia.relacao_movimentacao.all().exists())
+
+    def test_fechamento_transicao_3_ativo_gerido(self):
+        """
+        Transição 3 - Pendente de cotização -> Concluído
+            Condições necessárias:
+                - Valor de cota disponível na data de cotização.
+                - Fechamento na data de cotização.
+            Tarefas a executar:
+                - Atualiza a boleta de CPR de cotização com a data de pagamento igual
+            à data de cotização.
+                - Cria a movimentação e a quantidade do ativo.
+                - Atualizar estado.
+        """
+        # Criando a boleta no estado Pendente de cotização
+        copia = self.boleta_estado_pendente_de_cotizacao_ativo_gerido()
+        preco = decimal.Decimal('1300').quantize(decimal.Decimal('1.000000'))
+        # Cria preço para refletir as pré-condições.
+        preco = mommy.make('mercado.Preco',
+            ativo=copia.ativo,
+            data_referencia=copia.data_cotizacao,
+            preco_fechamento=preco
+        )
+        preco.full_clean()
+        preco.save()
+
+        # Deve colocar a boleta no estado Pendente de cotização
+        copia.fechar_boleta(copia.data_liquidacao)
+        self.assertEqual(copia.ESTADO[0][0], bm.BoletaFundoOffshore.ESTADO[0][0])
+
+        self.assertFalse(copia.boleta_passivo.all().exists())
+        copia.fechar_boleta(copia.data_cotizacao)
+        # Verifica criação de boleta de passivo passivo.
+        self.assertTrue(copia.boleta_passivo.all().exists())
+
+        tipo = ContentType.objects.get_for_model(copia)
+        passivo = bm.BoletaPassivo.objects.get(content_type__pk=tipo.id, object_id=copia.id)
+
+        self.assertEqual(passivo.valor, copia.financeiro)
+        self.assertEqual(passivo.operacao, copia.operacao)
+        self.assertEqual(passivo.data_movimentacao, copia.data_operacao)
+        self.assertEqual(passivo.data_cotizacao, copia.data_cotizacao)
+        self.assertEqual(passivo.data_liquidacao, copia.data_liquidacao)
+        self.assertEqual(passivo.fundo, copia.ativo.gestao)
+        self.assertEqual(passivo.cota, copia.preco)
+        self.assertEqual(passivo.content_object, copia)
+
+    def test_fechamento_transicao_4(self):
+        """
+        Transição 4 - Pendente de liquidação -> Concluído.
+            Condições necessárias:
+                - Liquidação da boleta de provisão.
+                - Fechamento na data de liquidação.
+            Tarefas a executar:
+                - Atualizar estado.
+        """
+        # Colocando a boleta no estado pendente de liquidação.
+        copia = self.boleta_estado_pendente_de_liquidacao()
+        self.assertEqual(copia.estado, copia.ESTADO[1][0])
+
+        # Liquidar a boleta na data de liquidação.
+        data_fechamento = copia.data_liquidacao
+        copia.fechar_boleta(data_referencia=data_fechamento)
+
+        # Verificação da atualização.
+        self.assertEqual(copia.estado, copia.ESTADO[5][0])
+
+    def test_fechamento_transicao_5(self):
+        """
+        Transição 5 - Pendente de cotização -> Pendente de informação de cotização
+            Condições necessárias:
+                - Valor da cota indisponível no dia de cotização.
+                - Fechamento na data de cotização.
+            Tarefas a executar:
+                - Atualizar estado.
+        """
+        # Colocando a boleta no estado pendente de cotização.
+        copia = self.boleta_estado_pendente_de_cotizacao()
+        self.assertEqual(copia.estado, copia.ESTADO[0][0])
+        # Fechando a boleta na data de cotização
+        data_fechamento = copia.data_cotizacao
+        copia.fechar_boleta(data_fechamento)
+        # Verificar se o estado foi atualizado
+        print(copia.estado)
+        self.assertEqual(copia.estado, copia.ESTADO[2][0])
+        self.assertFalse(copia.boleta_passivo.all().exists())
+
+    def test_fechamento_transicao_5_ativo_gerido(self):
+        """
+        Transição 5 - Pendente de cotização -> Pendente de informação de cotização
+            Condições necessárias:
+                - Valor da cota indisponível no dia de cotização.
+                - Fechamento na data de cotização.
+            Tarefas a executar:
+                - Atualizar estado.
+                - Gerar boleta de passivo.
+        """
+        # Colocando a boleta no estado pendente de cotização.
+        copia = self.boleta_estado_pendente_de_cotizacao_ativo_gerido()
+        self.assertEqual(copia.estado, copia.ESTADO[0][0])
+        # Fechando a boleta na data de cotização
+        data_fechamento = copia.data_cotizacao
+
+        self.assertFalse(copia.boleta_passivo.all().exists())
+
+        copia.fechar_boleta(data_fechamento)
+        # Verificar se o estado foi atualizado
+        self.assertEqual(copia.estado, copia.ESTADO[2][0])
+        self.assertTrue(copia.boleta_passivo.all().exists())
+
+        tipo = ContentType.objects.get_for_model(copia)
+
+        passivo = bm.BoletaPassivo.objects.get(content_type__pk=tipo.id, object_id=copia.id)
+
+        self.assertEqual(passivo.valor, copia.financeiro)
+        self.assertEqual(passivo.operacao, copia.operacao)
+        self.assertEqual(passivo.data_movimentacao, copia.data_operacao)
+        self.assertEqual(passivo.data_cotizacao, copia.data_cotizacao)
+        self.assertEqual(passivo.data_liquidacao, copia.data_liquidacao)
+        self.assertEqual(passivo.fundo, copia.ativo.gestao)
+        self.assertEqual(passivo.cota, copia.preco)
+        self.assertEqual(passivo.content_object, copia)
+
+    def test_fechamento_transacao_6(self):
+        """
+        Transição 6 - Pendente de informação de cotização -> Concluído.
+            Condições necessárias:
+                - Informação da cota disponibilizada.
+                - Fechamento na data em que a cota é disponibilizada.
+            Tarefas a executar:
+                - A data de pagamento da boleta de CPR de cotização deve ser
+                atualizada com a data de inserção do valor da cota.
+                - A quantidade e a movimentação do ativo também são criados com base
+                na data de inserção do valor da cota.
+                - Atualizar estado.
+        """
+        boleta = self.boleta_estado_pendente_de_informacao_de_cota()
+        self.assertEqual(boleta.estado, boleta.ESTADO[2][0])
+        # Verifica se a função cotizavel funciona
+        self.assertFalse(boleta.cotizavel())
+        # Salvando o preço para disponibilizar o valor da cota no sistema.
+        preco = mommy.make('mercado.Preco',
+            ativo=boleta.ativo,
+            data_referencia=boleta.data_cotizacao,
+            preco_fechamento=decimal.Decimal('100.00').quantize(decimal.Decimal('1.000000'))
+        )
+        preco.full_clean()
+        preco.save()
+        # Verifica se a criação do preço muda o resultado da função cotizavel
+        self.assertTrue(boleta.cotizavel())
+        # fechando a boleta em uma data que é diferente da data de cotizacao
+        self.assertFalse(preco.data_referencia==preco.criado_em)
+        data_fechamento = preco.criado_em.date()
+        # Verificando se a movimentação e a quantidade ainda não foram criadas.
+        self.assertFalse(boleta.relacao_movimentacao.all().exists())
+        self.assertFalse(boleta.relacao_quantidade.all().exists())
+
+        boleta.fechar_boleta(data_referencia=data_fechamento)
+
+        # Verificando o estado final da boleta.
+        self.assertEqual(boleta.estado, boleta.ESTADO[5][0])
+
+        # Pegando a boleta de CPR de cotização.
+        tipo = ContentType.objects.get_for_model(boleta)
+        cpr = bm.BoletaCPR.objects.get(content_type__pk=tipo.id,
+            object_id=boleta.id, valor_cheio=boleta.financeiro)
+        # Verificando se a data de pagamento da boleta de CPR é atualizada.
+        self.assertEqual(cpr.data_pagamento, data_fechamento)
+        # Verificando se a movimentacao é criada
+        self.assertTrue(boleta.relacao_movimentacao.all().exists())
+        # Verificando a data da movimentação criada.
+        mov = fm.Movimentacao.objects.get(content_type__pk=tipo.id, object_id=boleta.id)
+        self.assertEqual(mov.data, cpr.data_pagamento)
+        # Verificando se a quantidade é criada
+        self.assertTrue(boleta.relacao_quantidade.all().exists())
+        # Verificando a data da quantidade criada.
+        qtd = fm.Quantidade.objects.get(content_type__pk=tipo.id, object_id=boleta.id)
+        self.assertEqual(qtd.data, cpr.data_pagamento)
+
+    def test_fechamento_transacao_6_ativo_gerido(self):
+        """
+        Transição 6 - Pendente de informação de cotização -> Concluído.
+            Condições necessárias:
+                - Informação da cota disponibilizada.
+                - Fechamento na data em que a cota é disponibilizada.
+            Tarefas a executar:
+                - A data de pagamento da boleta de CPR de cotização deve ser
+                atualizada com a data de inserção do valor da cota.
+                - A quantidade e a movimentação do ativo também são criados com base
+                na data de inserção do valor da cota.
+                - Atualizar estado.
+                - Atualizar o valor da cota na boleta de passivo.
+        """
+        copia = self.boleta_estado_pendente_de_informacao_de_cota_gerido()
+        self.assertEqual(copia.estado, copia.ESTADO[2][0])
+        # Verifica se a função cotizavel funciona
+        self.assertFalse(copia.cotizavel())
+        # Salvando o preço para disponibilizar o valor da cota no sistema.
+        preco = mommy.make('mercado.Preco',
+            ativo=copia.ativo,
+            data_referencia=copia.data_cotizacao,
+            preco_fechamento=decimal.Decimal('100.00').quantize(decimal.Decimal('1.000000'))
+        )
+        preco.full_clean()
+        preco.save()
+        # Verifica se a criação do preço muda o resultado da função cotizavel
+        self.assertTrue(copia.cotizavel())
+        # fechando a boleta em uma data que é diferente da data de cotizacao
+        self.assertFalse(preco.data_referencia==preco.criado_em)
+        data_fechamento = preco.criado_em.date()
+        # Verificando se a boleta criou a boleta de passivo sem preco
+        self.assertTrue(copia.boleta_passivo.all().exists())
+        # Pegando a boleta de CPR de cotização.
+        passivo = bm.BoletaPassivo.objects.get(object_id=copia.id)
+        self.assertEqual(passivo.cota, None)
+
+        copia.fechar_boleta(data_referencia=data_fechamento)
+
+        passivo = bm.BoletaPassivo.objects.get(object_id=copia.id)
+
+        self.assertEqual(passivo.valor, copia.financeiro)
+        self.assertEqual(passivo.operacao, copia.operacao)
+        self.assertEqual(passivo.data_movimentacao, copia.data_operacao)
+        self.assertEqual(passivo.data_cotizacao, copia.data_cotizacao)
+        self.assertEqual(passivo.data_liquidacao, copia.data_liquidacao)
+        self.assertEqual(passivo.fundo, copia.ativo.gestao)
+        self.assertEqual(passivo.cota, copia.preco)
+        self.assertEqual(passivo.content_object, copia)
+
+    def test_fechamento_transacao_7(self):
+        """
+        Transição 7 - Pendente de cotização e liquidação -> pendente de liquidação e informação de cotização.
+            Condições necessárias:
+                - Informação da cota indisponível na data de cotização
+                - Boleta sem preço e quantidade.
+                - Fechamento na data de cotização.
+            Tarefas a executar:
+                - Criação de uma boleta de CPR de cotização sem data de pagamento
+                definida e data de início igual à data de cotização.
+                - Criação de uma boleta de CPR de liquidação, com valor financeiro
+                contrário à boleta de cotização, data inicial igual à data de
+                cotização, e data de pagamento igual à data de liquidação.
+                - Criação de uma provisão.
+                - Atualizar estado.
+        """
+        # Removendo informações para caracterizar uma boleta sem informações
+        # de cotização.
+        boleta = self.boleta_ativo_qualquer
+        boleta.id = None
+        boleta.preco = None
+        boleta.quantidade = None
+        boleta.save()
+
+        # Checando que não há boleta de CPR ou provisão criadas
+        self.assertFalse(boleta.boleta_CPR.all().exists())
+        self.assertFalse(boleta.boleta_provisao.all().exists())
+        self.assertFalse(boleta.relacao_quantidade.all().exists())
+        self.assertFalse(boleta.relacao_movimentacao.all().exists())
+
+        boleta.fechar_boleta(boleta.data_cotizacao)
+
+        tipo = ContentType.objects.get_for_model(boleta)
+
+        # Checando se as boletas foram criadas
+        self.assertEqual(boleta.boleta_CPR.all().count(), 2)
+
+        cpr_cota = bm.BoletaCPR.objects.get(content_type__pk=tipo.id, object_id=boleta.id, valor_cheio=boleta.financeiro)
+
+        self.assertEqual(cpr_cota.data_inicio, boleta.data_cotizacao)
+        self.assertEqual(cpr_cota.data_pagamento, None)
+        self.assertEqual(cpr_cota.fundo, boleta.fundo)
+        self.assertEqual(cpr_cota.valor_cheio, boleta.financeiro)
+
+        cpr_liq = bm.BoletaCPR.objects.get(content_type__pk=tipo.id, object_id=boleta.id, valor_cheio=-boleta.financeiro)
+
+        self.assertEqual(cpr_liq.data_inicio, boleta.data_cotizacao)
+        self.assertEqual(cpr_liq.data_pagamento, boleta.data_liquidacao)
+        self.assertEqual(cpr_liq.fundo, boleta.fundo)
+        self.assertEqual(cpr_liq.valor_cheio, -boleta.financeiro)
+
+        self.assertTrue(boleta.boleta_provisao.all().exists())
+
+        prov = bm.BoletaProvisao.objects.get(content_type__pk=tipo.id, object_id=boleta.id)
+
+        self.assertEqual(prov.caixa_alvo, boleta.caixa_alvo)
+        self.assertEqual(prov.fundo, boleta.fundo)
+        self.assertEqual(prov.financeiro, -boleta.financeiro)
+
+        self.assertFalse(boleta.relacao_quantidade.all().exists())
+        self.assertFalse(boleta.relacao_movimentacao.all().exists())
+        self.assertEqual(boleta.estado, boleta.ESTADO[3][0])
+
+    def test_fechamento_transacao_7_ativo_gerido(self):
+        """
+        Transição 7 - Pendente de cotização e liquidação -> pendente de liquidação e informação de cotização.
+            Condições necessárias:
+                - Informação da cota indisponível na data de cotização
+                - Boleta sem preço e quantidade.
+                - Fechamento na data de cotização.
+            Tarefas a executar:
+                - Criação de uma boleta de CPR de cotização sem data de pagamento
+                definida e data de início igual à data de cotização.
+                - Criação de uma boleta de CPR de liquidação, com valor financeiro
+                contrário à boleta de cotização, data inicial igual à data de
+                cotização, e data de pagamento igual à data de liquidação.
+                - Criação de uma provisão.
+                - Atualizar estado.
+        """
+        # Removendo informações para caracterizar uma boleta sem informações
+        # de cotização.
+        boleta = self.boleta_ativo_gerido
+        boleta.id = None
+        boleta.preco = None
+        boleta.quantidade = None
+        boleta.save()
+
+        # Checando que não há boleta de passivo
+        self.assertFalse(boleta.boleta_passivo.all().exists())
+
+        boleta.fechar_boleta(boleta.data_cotizacao)
+
+        self.assertTrue(boleta.boleta_passivo.all().exists())
+
+        passivo = bm.BoletaPassivo.objects.get(object_id=boleta.id)
+
+        self.assertEqual(passivo.valor, boleta.financeiro)
+        self.assertEqual(passivo.operacao, boleta.operacao)
+        self.assertEqual(passivo.data_movimentacao, boleta.data_operacao)
+        self.assertEqual(passivo.data_cotizacao, boleta.data_cotizacao)
+        self.assertEqual(passivo.data_liquidacao, boleta.data_liquidacao)
+        self.assertEqual(passivo.fundo, boleta.ativo.gestao)
+        self.assertEqual(passivo.content_object, boleta)
+
+    def test_fechamento_transacao_8(self):
+        """
+        Transição 8 - Pendente de liquidação e informação de cotização -> concluído.
+            Condições necessárias:
+                - Fechamento na data de liquidação;
+                - Cota disponível na data de liquidação.
+            Tarefas a executar:
+                - Atualização da data de pagamento da boleta de CPR com a data
+                de fechamento da cota no sistema.
+                - Criação da movimentação e quantidade do ativo.
+                - Atualzar estado.
+        """
+        boleta = self.boleta_estado_pendente_de_liquidacao_e_informacao_cota()
+        # disponibilizando preço
+        preco = mommy.make('mercado.preco',
+            ativo=boleta.ativo,
+            data_referencia=boleta.data_cotizacao,
+            preco_fechamento=decimal.Decimal('1200').quantize(decimal.Decimal('1.000000'))
+        )
+        preco.full_clean()
+        preco.save()
+
+        self.assertEqual(boleta.boleta_CPR.all().count(), 2)
+        self.assertFalse(boleta.relacao_quantidade.all().exists())
+        self.assertFalse(boleta.relacao_movimentacao.all().exists())
+
+        boleta.fechar_boleta(boleta.data_liquidacao)
+
+        tipo = ContentType.objects.get_for_model(boleta)
+
+        cpr_cota = bm.BoletaCPR.objects.get(content_type__pk=tipo.id, object_id=boleta.id, valor_cheio=boleta.financeiro)
+
+        # Verificando se a boleta foi atualizada.
+        self.assertEqual(cpr_cota.data_pagamento, boleta.data_liquidacao)
+        self.assertEqual(boleta.estado, boleta.ESTADO[5][0])
+        self.assertTrue(boleta.relacao_quantidade.all().exists())
+        self.assertTrue(boleta.relacao_movimentacao.all().exists())
+
+    def test_fechamento_transacao_8_ativo_gerido(self):
+        """
+        Transição 8 - Pendente de liquidação e informação de cotização -> concluído.
+            Condições necessárias:
+                - Fechamento na data de liquidação;
+                - Cota disponível na data de liquidação.
+            Tarefas a executar:
+                - Atualização da data de pagamento da boleta de CPR com a data
+                de fechamento da cota no sistema.
+                - Criação da movimentação e quantidade do ativo.
+                - Atualzar estado.
+                - Atualizar valor da cota na boleta de passivo
+        """
+        boleta = self.boleta_estado_pendente_de_liquidacao_e_informacao_cota_ativo_gerido()
+        # disponibilizando preço
+        preco = mommy.make('mercado.preco',
+            ativo=boleta.ativo,
+            data_referencia=boleta.data_cotizacao,
+            preco_fechamento=decimal.Decimal('1200').quantize(decimal.Decimal('1.000000'))
+        )
+        preco.full_clean()
+        preco.save()
+
+        passivo = bm.BoletaPassivo.objects.get(object_id=boleta.id)
+
+        self.assertEqual(boleta.boleta_CPR.all().count(), 2)
+        self.assertTrue(boleta.boleta_passivo.all().exists())
+        boleta.fechar_boleta(boleta.data_liquidacao)
+
+        passivo = bm.BoletaPassivo.objects.get(object_id=boleta.id)
+
+        # Verificando se a boleta foi atualizada.
+        self.assertEqual(boleta.estado, boleta.ESTADO[5][0])
+        self.assertEqual(passivo.cota, boleta.preco)
+
+    def test_fechamento_transacao_9(self):
+        """
+        Transição 9 - Pendente de liquidação e informação de cotização -> Pendente de informação de cotização.
+            Condições necessárias:
+                - Fechamento na data de liquidação
+                - Cota indisponível na data de liquidação.
+            Tarefas a executar:
+                - Apenas atualiza o estado.
+        """
+        boleta = self.boleta_estado_pendente_de_liquidacao_e_informacao_cota()
+        self.assertFalse(boleta.cotizavel())
+        boleta.fechar_boleta(boleta.data_liquidacao)
+        self.assertEqual(boleta.estado, boleta.ESTADO[2][0])
+
+        tipo = ContentType.objects.get_for_model(boleta)
+        cpr_cota = bm.BoletaCPR.objects.get(content_type__pk=tipo.id, object_id=boleta.id, valor_cheio=boleta.financeiro)
+        self.assertEqual(cpr_cota.data_pagamento, None)
+
+    def boleta_estado_pendente_de_cotizacao(self):
+        """
+        Método auxiliar para colocar uma boleta no estado "Pendente de cotização."
+        """
+        copia = self.boleta_ativo_qualquer
+        copia.id = None
+        copia.data_liquidacao = datetime.date(year=2018, month=10, day=16)
+        copia.data_cotizacao = datetime.date(year=2018, month=10, day=19)
+        data_fechamento = copia.data_liquidacao
+        copia.preco = None
+        copia.quantidade = None
+        copia.save()
+        copia.fechar_boleta(data_referencia=data_fechamento)
+        return copia
+
+    def boleta_estado_pendente_de_cotizacao_ativo_gerido(self):
+        """
+        Método auxiliar para colocar uma boleta no estado "Pendente de cotização."
+        """
+        copia = self.boleta_ativo_gerido
+        copia.id = None
+        copia.data_liquidacao = datetime.date(year=2018, month=10, day=16)
+        copia.data_cotizacao = datetime.date(year=2018, month=10, day=19)
+        data_fechamento = copia.data_liquidacao
+        copia.preco = None
+        copia.quantidade = None
+        copia.save()
+        copia.fechar_boleta(data_referencia=data_fechamento)
+        return copia
+
+    def boleta_estado_pendente_de_liquidacao(self):
+        """
+        Método auxiliar para colocar uma boleta no estado "Pendente de liquidação."
+        """
+        copia = self.boleta_ativo_qualquer
+        copia.id = None
+        data_fechamento = copia.data_cotizacao
+        copia.estado = copia.ESTADO[4][0]
+        copia.save()
+        copia.fechar_boleta(data_referencia=data_fechamento)
+
+        return copia
+
+    def boleta_estado_pendente_de_liquidacao_ativo_gerido(self):
+        """
+        Método auxiliar para colocar uma boleta no estado "Pendente de liquidação."
+        """
+        copia = self.boleta_ativo_gerido
+        copia.id = None
+        data_fechamento = copia.data_cotizacao
+        copia.estado = copia.ESTADO[4][0]
+        copia.save()
+        copia.fechar_boleta(data_referencia=data_fechamento)
+
+        return copia
+
+    def boleta_estado_pendente_de_informacao_de_cota(self):
+        """
+        Método auxiliar para colocar uma boleta no estado "Pendente de informação de cotizacao."
+        """
+        copia = self.boleta_estado_pendente_de_cotizacao()
+        copia.fechar_boleta(copia.data_cotizacao)
+        return copia
+
+    def boleta_estado_pendente_de_informacao_de_cota_gerido(self):
+        """
+        Método auxiliar para colocar uma boleta no estado "Pendente de informação de cotizacao."
+        """
+        copia = self.boleta_estado_pendente_de_cotizacao_ativo_gerido()
+        copia.fechar_boleta(copia.data_cotizacao)
+        return copia
+
+    def boleta_estado_pendente_de_liquidacao_e_informacao_cota(self):
+        """
+        Cria e retorna uma boleta com o estado pendente de liquidação e
+        informação de cota
+        """
+        boleta = self.boleta_ativo_qualquer
+        boleta.id = None
+        boleta.preco = None
+        boleta.quantidade = None
+        boleta.save()
+        boleta.fechar_boleta(boleta.data_cotizacao)
+        return boleta
+
+    def boleta_estado_pendente_de_liquidacao_e_informacao_cota_ativo_gerido(self):
+        """
+        Cria e retorna uma boleta com o estado pendente de liquidação e
+        informação de cota
+        """
+        boleta = self.boleta_ativo_gerido
+        boleta.id = None
+        boleta.preco = None
+        boleta.quantidade = None
+        boleta.save()
+        boleta.fechar_boleta(boleta.data_cotizacao)
+        return boleta
+
+class BoletaPassivoUnitTests(TestCase):
+    """
+    Classe de unit tests de Passivo
+    """
+    # Teste - Em caso de aporte - criar certificado de passivo.
+    # Teste - Em caso de resgate - consumir certificado de passivo.
+    # Teste - Criação de boleta de provisão
+    # Teste - Criação da boleta de CPR
+    def setUp(self):
+        self.cotista = mommy.make('fundo.cotista',
+            nome='Atena'
+        )
+        self.fundo = mommy.make('fundo.Fundo',
+            nome='Veredas'
+        )
+        # Boleta que faz aplicação - cria 1.000 cotas, valor de 1.000.000
+        self.boleta_aplicacao = mommy.make('boletagem.BoletaPassivo',
+            cotista=self.cotista,
+            data_movimentacao=datetime.date(year=2018, month=10, day=26),
+            data_cotizacao=datetime.date(year=2018, month=10, day=27),
+            data_liquidacao=datetime.date(year=2018, month=10, day=26),
+            cota=decimal.Decimal('1000'),
+            operacao=bm.BoletaPassivo.OPERACAO[0][0],
+            valor=decimal.Decimal('1000000').quantize(decimal.Decimal('1.00')),
+            fundo=self.fundo
+        )
+        # Boleta que faz aplicação - cria 1.000 cotas, valor de 1.000.000
+        self.boleta_aplicacao_2016 = mommy.make('boletagem.BoletaPassivo',
+            cotista=self.cotista,
+            data_movimentacao=datetime.date(year=2016, month=10, day=26),
+            data_cotizacao=datetime.date(year=2016, month=10, day=27),
+            data_liquidacao=datetime.date(year=2016, month=10, day=26),
+            cota=decimal.Decimal('1000'),
+            operacao=bm.BoletaPassivo.OPERACAO[0][0],
+            valor=decimal.Decimal('1000000').quantize(decimal.Decimal('1.00')),
+            fundo=self.fundo
+        )
+        # Boleta que faz aplicação - cria 500 cotas, valor de 1.000.000
+        self.boleta_aplicacao_2017 = mommy.make('boletagem.BoletaPassivo',
+            cotista=self.cotista,
+            data_movimentacao=datetime.date(year=2017, month=10, day=26),
+            data_cotizacao=datetime.date(year=2017, month=10, day=27),
+            data_liquidacao=datetime.date(year=2017, month=10, day=26),
+            cota=decimal.Decimal('2000'),
+            operacao=bm.BoletaPassivo.OPERACAO[0][0],
+            valor=decimal.Decimal('1000000').quantize(decimal.Decimal('1.00')),
+            fundo=self.fundo
+        )
+        self.boleta_aplicacao_cotizacao_antes_da_liquidacao = mommy.make('boletagem.BoletaPassivo',
+            cotista=self.cotista,
+            data_movimentacao=datetime.date(year=2018, month=10, day=26),
+            data_cotizacao=datetime.date(year=2018, month=10, day=27),
+            data_liquidacao=datetime.date(year=2018, month=10, day=28),
+            cota=decimal.Decimal('1000'),
+            operacao=bm.BoletaPassivo.OPERACAO[0][0],
+            valor=decimal.Decimal('1000000').quantize(decimal.Decimal('1.00')),
+            fundo=self.fundo
+        )
+        # Boleta que faz resgate
+        self.boleta_resgate = mommy.make('boletagem.BoletaPassivo',
+            cotista=self.cotista,
+            data_movimentacao=datetime.date(year=2018, month=10, day=26),
+            data_cotizacao=datetime.date(year=2018, month=10, day=27),
+            data_liquidacao=datetime.date(year=2018, month=10, day=26),
+            cota=decimal.Decimal('1000'),
+            operacao=bm.BoletaPassivo.OPERACAO[1][0],
+            valor=decimal.Decimal('1000000').quantize(decimal.Decimal('1.00')),
+            fundo=self.fundo
+        )
+        self.boleta_resgate_cotizacao_antes_da_liquidacao = mommy.make('boletagem.BoletaPassivo',
+            cotista=self.cotista,
+            data_movimentacao=datetime.date(year=2018, month=10, day=26),
+            data_cotizacao=datetime.date(year=2018, month=10, day=27),
+            data_liquidacao=datetime.date(year=2018, month=10, day=28),
+            cota=decimal.Decimal('1000'),
+            operacao=bm.BoletaPassivo.OPERACAO[1][0],
+            valor=decimal.Decimal('1000000').quantize(decimal.Decimal('1.00')),
+            fundo=self.fundo
+        )
+        # TODO: teste de resgate total
+        # Boleta que faz resgate total
+        self.boleta_resgate_total = mommy.make('boletagem.BoletaPassivo',
+            cotista=self.cotista,
+            data_movimentacao=datetime.date(year=2018, month=10, day=26),
+            data_cotizacao=datetime.date(year=2018, month=10, day=27),
+            data_liquidacao=datetime.date(year=2018, month=10, day=26),
+            cota=decimal.Decimal('1000'),
+            operacao=bm.BoletaPassivo.OPERACAO[2][0],
+            valor=decimal.Decimal('1000000').quantize(decimal.Decimal('1.00')),
+            fundo=self.fundo
+        )
+
+    def test_criar_provisao_aplicacao(self):
+        """
+        Testa a criação de boleta de provisão do fundo investido.
+        """
+        copia = self.boleta_aplicacao
+        copia.id = None
+        copia.full_clean()
+        copia.save()
+
+        self.assertFalse(copia.boleta_provisao.all().exists())
+        copia.criar_provisao()
+        self.assertTrue(copia.boleta_provisao.all().exists())
+
+        provisao = bm.BoletaProvisao.objects.get(object_id=copia.id)
+
+        self.assertEqual(abs(copia.valor), provisao.financeiro)
+        self.assertEqual(copia.fundo.caixa_padrao, provisao.caixa_alvo)
+        self.assertEqual(copia.data_liquidacao, provisao.data_pagamento)
+        self.assertEqual(copia.fundo, provisao.fundo)
+        self.assertEqual(copia, provisao.content_object)
+
+    def test_criar_provisao_resgate(self):
+        """
+        Testa a criação de boleta de provisão do fundo investido de acordo com
+        a operação.
+        """
+        copia = self.boleta_resgate
+        copia.id = None
+        copia.full_clean()
+        copia.save()
+
+        self.assertFalse(copia.boleta_provisao.all().exists())
+        copia.criar_provisao()
+        self.assertTrue(copia.boleta_provisao.all().exists())
+
+        provisao = bm.BoletaProvisao.objects.get(object_id=copia.id)
+
+        self.assertEqual(-abs(copia.valor), provisao.financeiro)
+        self.assertEqual(copia.fundo.caixa_padrao, provisao.caixa_alvo)
+        self.assertEqual(copia.data_liquidacao, provisao.data_pagamento)
+        self.assertEqual(copia.fundo, provisao.fundo)
+        self.assertEqual(copia, provisao.content_object)
+
+    def test_criar_boleta_CPR_aplicacao_liquidacao_antes_da_cotizacao(self):
+        """
+        Testa criação da boleta de CPR equivalente à movimentação.
+        """
+        copia = self.boleta_aplicacao
+        copia.id = None
+        copia.full_clean()
+        copia.save()
+
+        self.assertFalse(copia.boleta_CPR.all().exists())
+        copia.criar_boleta_CPR()
+        self.assertTrue(copia.boleta_CPR.all().exists())
+
+        cpr = bm.BoletaCPR.objects.get(object_id=copia.id)
+
+        self.assertEqual(-abs(copia.valor), cpr.valor_cheio)
+        self.assertEqual(copia.fundo, cpr.fundo)
+        self.assertEqual(copia.data_liquidacao, cpr.data_inicio)
+        self.assertEqual(copia.data_cotizacao, cpr.data_pagamento)
+        self.assertEqual(cpr.data_vigencia_fim, None)
+        self.assertEqual(cpr.data_vigencia_inicio, None)
+        self.assertEqual(cpr.tipo, bm.BoletaCPR.TIPO[2][0])
+        self.assertEqual(cpr.capitalizacao, bm.BoletaCPR.CAPITALIZACAO[2][0])
+
+    def test_criar_boleta_CPR_aplicacao_cotizacao_antes_da_liquidacao(self):
+        """
+        Testa criação da boleta de CPR equivalente à movimentação.
+        """
+        copia = self.boleta_aplicacao_cotizacao_antes_da_liquidacao
+        copia.id = None
+        copia.full_clean()
+        copia.save()
+
+        self.assertFalse(copia.boleta_CPR.all().exists())
+        copia.criar_boleta_CPR()
+        self.assertTrue(copia.boleta_CPR.all().exists())
+
+        cpr = bm.BoletaCPR.objects.get(object_id=copia.id)
+
+        self.assertEqual(abs(copia.valor), cpr.valor_cheio)
+        self.assertEqual(copia.fundo, cpr.fundo)
+        self.assertEqual(copia.data_cotizacao, cpr.data_inicio)
+        self.assertEqual(copia.data_liquidacao, cpr.data_pagamento)
+        self.assertEqual(cpr.data_vigencia_fim, None)
+        self.assertEqual(cpr.data_vigencia_inicio, None)
+        self.assertEqual(cpr.tipo, bm.BoletaCPR.TIPO[2][0])
+        self.assertEqual(cpr.capitalizacao, bm.BoletaCPR.CAPITALIZACAO[2][0])
+
+    def test_criar_boleta_CPR_resgate_liquidacao_antes_da_cotizacao(self):
+        """
+        Testa criação da boleta de CPR equivalente à movimentação.
+        """
+        copia = self.boleta_resgate
+        copia.id = None
+        copia.full_clean()
+        copia.save()
+
+        self.assertFalse(copia.boleta_CPR.all().exists())
+        copia.criar_boleta_CPR()
+        self.assertTrue(copia.boleta_CPR.all().exists())
+
+        cpr = bm.BoletaCPR.objects.get(object_id=copia.id)
+
+        self.assertEqual(abs(copia.valor), cpr.valor_cheio)
+        self.assertEqual(copia.fundo, cpr.fundo)
+        self.assertEqual(copia.data_liquidacao, cpr.data_inicio)
+        self.assertEqual(copia.data_cotizacao, cpr.data_pagamento)
+        self.assertEqual(cpr.data_vigencia_fim, None)
+        self.assertEqual(cpr.data_vigencia_inicio, None)
+        self.assertEqual(cpr.tipo, bm.BoletaCPR.TIPO[2][0])
+        self.assertEqual(cpr.capitalizacao, bm.BoletaCPR.CAPITALIZACAO[2][0])
+
+    def test_criar_boleta_CPR_resgate_cotizacao_antes_da_liquidacao(self):
+        """
+        Testa criação da boleta de CPR equivalente à movimentação.
+        """
+        copia = self.boleta_resgate_cotizacao_antes_da_liquidacao
+        copia.id = None
+        copia.full_clean()
+        copia.save()
+
+        self.assertFalse(copia.boleta_CPR.all().exists())
+        copia.criar_boleta_CPR()
+        self.assertTrue(copia.boleta_CPR.all().exists())
+
+        cpr = bm.BoletaCPR.objects.get(object_id=copia.id)
+
+        self.assertEqual(-abs(copia.valor), cpr.valor_cheio)
+        self.assertEqual(copia.fundo, cpr.fundo)
+        self.assertEqual(copia.data_cotizacao, cpr.data_inicio)
+        self.assertEqual(copia.data_liquidacao, cpr.data_pagamento)
+        self.assertEqual(cpr.data_vigencia_fim, None)
+        self.assertEqual(cpr.data_vigencia_inicio, None)
+        self.assertEqual(cpr.tipo, bm.BoletaCPR.TIPO[2][0])
+        self.assertEqual(cpr.capitalizacao, bm.BoletaCPR.CAPITALIZACAO[2][0])
+
+    def test_criar_certificado_aplicacao(self):
+        """
+        Testa a criação do certificado de aplicação da boleta.
+        """
+        copia = self.boleta_aplicacao
+        copia.id = None
+        copia.save()
+
+        self.assertFalse(copia.certificado_passivo.all().exists())
+        copia.gerar_certificado()
+        self.assertTrue(copia.certificado_passivo.all().exists())
+
+        certificado = copia.certificado_passivo.get(boletapassivo=copia)
+
+        self.assertEqual(certificado.cotista, copia.cotista)
+        self.assertEqual(certificado.qtd_cotas, (copia.valor/copia.cota).quantize(decimal.Decimal('1.0000000')))
+        self.assertEqual(certificado.valor_cota, copia.cota)
+        self.assertEqual(certificado.cotas_aplicadas, (copia.valor/copia.cota).quantize(decimal.Decimal('1.0000000')))
+        self.assertEqual(certificado.data, copia.data_cotizacao)
+
+    def test_consumir_certificado_parcial_resgate(self):
+        """
+        Testa o consumo parcial de um certificado de passivo do fundo. A boleta
+        deve consumir apenas o certificado de 2016.
+        Quantidade de cotas total a ser consumida = Financeiro/Cota
+        """
+        # Criando certificados de aplicacao
+        aplicacao_2016 = self.boleta_aplicacao_2016
+        aplicacao_2016.id = None
+        aplicacao_2016.save()
+        aplicacao_2016.gerar_certificado()
+
+        aplicacao_2017 = self.boleta_aplicacao_2017
+        aplicacao_2017.id = None
+        aplicacao_2017.save()
+        aplicacao_2017.gerar_certificado()
+
+        certificado_consumido = aplicacao_2016.certificado_passivo.get(boletapassivo=aplicacao_2016)
+        certificado_intacto = aplicacao_2017.certificado_passivo.get(boletapassivo=aplicacao_2017)
+        # Quantidade de cotas original no certificado.
+        qtd_original = certificado_consumido.cotas_aplicadas
+
+        copia = self.boleta_resgate
+        copia.id = None
+        copia.save()
+
+        self.assertFalse(copia.certificado_passivo.all().exists())
+        copia.consumir_certificado()
+        self.assertTrue(copia.certificado_passivo.all().exists())
+
+        certificado = copia.certificado_passivo.get(boletapassivo=copia)
+
+        self.assertEqual(certificado.id, certificado_consumido.id)
+        self.assertEqual(certificado.cotas_aplicadas, (qtd_original
+            - copia.valor/copia.cota).quantize(decimal.Decimal('1.0000000')))
+
+    def test_consumir_dois_certificados_resgate(self):
+        """
+        Quando resgates consomem mais de uma boleta, a quantidade deve se
+        distribuir entre vários certificados, por ordem de mais antiga primeiro.
+        """
+        # Criando certificados de aplicacao
+        aplicacao_2016 = self.boleta_aplicacao_2016
+        aplicacao_2016.id = None
+        aplicacao_2016.save()
+        # 1.000 cotas
+        aplicacao_2016.gerar_certificado()
+        # 500 cotas
+        aplicacao_2017 = self.boleta_aplicacao_2017
+        aplicacao_2017.id = None
+        aplicacao_2017.save()
+        aplicacao_2017.gerar_certificado()
+
+        certificado_consumido = aplicacao_2016.certificado_passivo.get(boletapassivo=aplicacao_2016)
+        certificado_consumido_parcial = aplicacao_2017.certificado_passivo.get(boletapassivo=aplicacao_2017)
+        # Quantidade de cotas original no certificado totalmente consumido
+        qtd_certificado_consumida = certificado_consumido.cotas_aplicadas
+        qtd_certificado_parcial = certificado_consumido_parcial.cotas_aplicadas
+
+        copia = self.boleta_resgate
+        copia.id = None
+        # Resgate total de 1.200 cotas
+        copia.valor = decimal.Decimal('3000000')
+        copia.cota = decimal.Decimal('2500')
+        qtd_cotas_total_consumida = (copia.valor/copia.cota).quantize(decimal.Decimal('1.0000000'))
+        copia.save()
+
+        self.assertFalse(copia.certificado_passivo.all().exists())
+        copia.consumir_certificado()
+        self.assertTrue(copia.certificado_passivo.all().exists())
+        self.assertEqual(copia.certificado_passivo.all().count(), 2)
+
+        certificado_liquidado = copia.certificado_passivo.filter(boletapassivo=copia).earliest('data')
+        certificado_parcial = copia.certificado_passivo.filter(boletapassivo=copia).latest('data')
+
+        self.assertEqual(certificado_liquidado.id, certificado_consumido.id)
+        # Todas as cotas foram consumidas
+        self.assertEqual(certificado_liquidado.cotas_aplicadas, decimal.Decimal('0'))
+
+        self.assertEqual(certificado_parcial.id, certificado_consumido_parcial.id)
+        # Consome as cotas que sobraram
+        self.assertEqual(certificado_parcial.cotas_aplicadas, qtd_certificado_parcial - (qtd_cotas_total_consumida - qtd_certificado_consumida))

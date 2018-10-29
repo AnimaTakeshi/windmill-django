@@ -5,7 +5,7 @@ from django import forms
 from import_export import resources, fields
 from import_export.admin import ImportExportModelAdmin
 from import_export.widgets import ForeignKeyWidget
-from .models import Ativo, Pais, Moeda, Renda_Fixa, Acao, Cambio, Caixa
+from .models import Ativo, Pais, Moeda, Renda_Fixa, Acao, Cambio, Caixa, Fundo_Local, Fundo_Offshore
 import ativos.forms
 # Register your models here.
 
@@ -112,4 +112,11 @@ class CambioAdmin(ImportExportModelAdmin):
 @admin.register(Caixa)
 class CaixaAdmin(ImportExportModelAdmin):
     list_display = ('id', 'nome', 'moeda', 'zeragem')
-    
+
+@admin.register(Fundo_Local)
+class FundoLocalAdmin(ImportExportModelAdmin):
+    list_display = ('id', 'nome', 'pais', 'banco', 'agencia', 'conta_corrente' ,'digito')
+
+@admin.register(Fundo_Offshore)
+class FundoOffshoreAdmin(ImportExportModelAdmin):
+    list_display = ('id', 'nome', 'pais')
