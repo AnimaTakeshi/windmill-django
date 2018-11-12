@@ -1335,6 +1335,13 @@ class BoletaFundoLocalUnitTest(TestCase):
         self.assertEqual(passivo.cota, copia.preco)
         self.assertEqual(passivo.content_object, copia)
 
+    def test_checa_fundo_passivo(self):
+        """
+        Testa a função checa_fundo_passivo.
+        """
+        self.assertTrue(self.boleta_ativo_gerido.checa_fundo_passivo(self.fundo_gerido))
+        self.assertFalse(self.boleta.checa_fundo_passivo(self.fundo_gerido))
+
     @pytest.mark.xfail
     def test_resgate_total(self):
         """

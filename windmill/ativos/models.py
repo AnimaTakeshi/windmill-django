@@ -108,7 +108,7 @@ class Caixa(Ativo):
 
 class Fundo_Local(Ativo):
 
-    CPNJ = models.CharField(max_length=18)
+    CPNJ = models.CharField(max_length=18, null=True, blank=True)
     # Indica quanto tempo depois do pedido a cotização de um resgate é feita
     data_cotizacao_resgate = models.DurationField()
     # Indica quanto tempo depois do pedido a liquidação de um resgate é feita
@@ -119,7 +119,7 @@ class Fundo_Local(Ativo):
     data_liquidacao_aplicacao = models.DurationField()
     banco = models.CharField(max_length=3, null=True, blank=True)
     agencia = models.CharField(max_length=6, null=True, blank=True)
-    conta_corrente = models.CharField(max_length=7)
+    conta_corrente = models.CharField(max_length=7, null=True, blank=True)
     digito = models.CharField(max_length=1, null=True, blank=True)
     conta_cetip = models.CharField(max_length=10, null=True, blank=True)
     codigo_cetip = models.CharField(max_length=10, null=True, blank=True)

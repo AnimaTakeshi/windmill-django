@@ -54,7 +54,6 @@ from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelatio
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
-from fundo.models import Quantidade, Movimentacao
 import ativos.models as am
 import fundo.models as fm
 import mercado.models as mm
@@ -136,8 +135,8 @@ class BoletaAcao(BaseModel):
 
     boleta_provisao = GenericRelation('BoletaProvisao', related_query_name='provisao')
     boleta_CPR = GenericRelation('BoletaCPR', related_query_name='CPR')
-    relacao_quantidade = GenericRelation(Quantidade, related_query_name='qtd_acao')
-    relacao_movimentacao = GenericRelation(Movimentacao, related_query_name='mov_acao')
+    relacao_quantidade = GenericRelation('fundo.Quantidade', related_query_name='qtd_acao')
+    relacao_movimentacao = GenericRelation('fundo.Movimentacao', related_query_name='mov_acao')
 
     class Meta:
         verbose_name_plural = "Boletas de operação de ações"
@@ -267,6 +266,7 @@ class BoletaAcao(BaseModel):
         de criar outra.
         """
         # Checar se há quantidade já criada
+        from fundo.models import Quantidade, Movimentacao
         if self.relacao_quantidade.all().exists() == False:
             # Criar Quantidade do Ativo
             acao_quantidade = Quantidade(
@@ -288,8 +288,11 @@ class BoletaAcao(BaseModel):
         # Checar se há movimentação já criada
         if self.relacao_movimentacao.all().exists() == False:
             # Criar Movimentacao do Ativo
+            from fundo.models import Quantidade, Movimentacao
+            valor = self.preco * self.quantidade + self.corretagem
+            valor = decimal.Decimal(valor).quantize(decimal.Decimal('1.000000'))
             acao_movimentacao = Movimentacao(
-                valor = self.preco * self.quantidade + self.corretagem,
+                valor = valor,
                 fundo = self.fundo,
                 data = self.data_operacao,
                 content_object = self,
@@ -324,8 +327,8 @@ class BoletaRendaFixaLocal(BaseModel):
 
     boleta_provisao = GenericRelation('BoletaProvisao', related_query_name='provisao')
     boleta_CPR = GenericRelation('BoletaCPR', related_query_name='CPR')
-    relacao_quantidade = GenericRelation(Quantidade, related_query_name='qtd_rfloc')
-    relacao_movimentacao = GenericRelation(Movimentacao, related_query_name='mov_rfloc')
+    relacao_quantidade = GenericRelation('fundo.Quantidade', related_query_name='qtd_rfloc')
+    relacao_movimentacao = GenericRelation('fundo.Movimentacao', related_query_name='mov_rfloc')
 
     class Meta:
         verbose_name_plural = "Boletas de operação de renda fixa local"
@@ -440,6 +443,7 @@ class BoletaRendaFixaLocal(BaseModel):
         # Checar se há quantidade já criada
         if self.relacao_quantidade.all().exists() == False:
             # Criar Quantidade do Ativo
+            from fundo.models import Quantidade, Movimentacao
             acao_quantidade = Quantidade(
                 qtd = self.quantidade,
                 fundo = self.fundo,
@@ -458,6 +462,7 @@ class BoletaRendaFixaLocal(BaseModel):
         # Checar se há movimentação já criada
         if self.relacao_movimentacao.all().exists() == False:
             # Criar Movimentacao do Ativo
+            from fundo.models import Quantidade, Movimentacao
             acao_movimentacao = Movimentacao(
                 valor = round(self.preco * self.quantidade + self.corretagem, 2),
                 fundo = self.fundo,
@@ -495,8 +500,8 @@ class BoletaRendaFixaOffshore(BaseModel):
     # boletas de provisão, CPR, quantidade e movimentação.
     boleta_provisao = GenericRelation('BoletaProvisao', related_query_name='provisao')
     boleta_CPR = GenericRelation('BoletaCPR', related_query_name='CPR')
-    relacao_quantidade = GenericRelation(Quantidade, related_query_name='qtd_rfoff')
-    relacao_movimentacao = GenericRelation(Movimentacao, related_query_name='mov_rfoff')
+    relacao_quantidade = GenericRelation('fundo.Quantidade', related_query_name='qtd_rfoff')
+    relacao_movimentacao = GenericRelation('fundo.Movimentacao', related_query_name='mov_rfoff')
 
     def clean_data_liquidacao(self):
         """
@@ -553,7 +558,8 @@ class BoletaRendaFixaOffshore(BaseModel):
         a boleta não possuir nenhuma movimentação ligada a ela
         """
         if self.relacao_movimentacao.all().exists() == False:
-            ativo_movimentacao = fm.Movimentacao(
+            from fundo.models import Quantidade, Movimentacao
+            ativo_movimentacao = Movimentacao(
                 valor = round(self.quantidade * self.preco + self.corretagem, 2),
                 fundo = self.fundo,
                 data = self.data_operacao,
@@ -569,7 +575,8 @@ class BoletaRendaFixaOffshore(BaseModel):
         """
         if self.relacao_quantidade.all().exists() == False:
             self.clean_quantidade()
-            ativo_quantidade = fm.Quantidade(
+            from fundo.models import Quantidade, Movimentacao
+            ativo_quantidade = Quantidade(
                 qtd = self.quantidade,
                 fundo = self.fundo,
                 data = self.data_operacao,
@@ -663,8 +670,8 @@ class BoletaFundoLocal(BaseModel):
 
     boleta_provisao = GenericRelation('BoletaProvisao', related_query_name='provisao')
     boleta_CPR = GenericRelation('BoletaCPR', related_query_name='CPR')
-    relacao_quantidade = GenericRelation(Quantidade, related_query_name='qtd_fundo_local')
-    relacao_movimentacao = GenericRelation(Movimentacao, related_query_name='mov_fundo_local')
+    relacao_quantidade = GenericRelation('fundo.Quantidade', related_query_name='qtd_fundo_local')
+    relacao_movimentacao = GenericRelation('fundo.Movimentacao', related_query_name='mov_fundo_local')
     relacao_passivo = GenericRelation('BoletaPassivo', related_query_name='mov_origem')
 
     def save(self, *args, **kwargs):
@@ -749,6 +756,13 @@ class BoletaFundoLocal(BaseModel):
         """
         return self.ativo.gerido()
 
+    def checa_fundo_passivo(self, fundo):
+        """ fundo.Fundo -> Boolean
+        Recebe um fundo, e checa com o ativo para ver se o fundo é o ativo sendo
+        movimentado
+        """
+        return self.ativo.gestao == fundo
+
     def cota_disponivel(self):
         """
         Verifica se o valor da cota está disponível. Se estiver, atualiza a boleta
@@ -798,7 +812,8 @@ class BoletaFundoLocal(BaseModel):
         """
         if self.relacao_movimentacao.all().exists() == False:
             self.clean_financeiro()
-            mov = fm.Movimentacao(
+            from fundo.models import Quantidade, Movimentacao
+            mov = Movimentacao(
                 valor=self.financeiro,
                 fundo=self.fundo,
                 data=self.data_cotizacao,
@@ -820,7 +835,8 @@ class BoletaFundoLocal(BaseModel):
         # A MOVIMENTAÇÃO.
         if self.relacao_quantidade.all().exists() == False:
             self.clean_quantidade()
-            qtd = fm.Quantidade(
+            from fundo.models import Quantidade, Movimentacao
+            qtd = Quantidade(
                 qtd=self.quantidade,
                 fundo=self.fundo,
                 data=self.data_cotizacao,
@@ -944,8 +960,8 @@ class BoletaFundoOffshore(BaseModel):
 
     boleta_provisao = GenericRelation('BoletaProvisao', related_query_name='provisao')
     boleta_CPR = GenericRelation('BoletaCPR', related_query_name='CPR')
-    relacao_quantidade = GenericRelation(Quantidade, related_query_name='qtd_fundo_off')
-    relacao_movimentacao = GenericRelation(Movimentacao, related_query_name='mov_fundo_off')
+    relacao_quantidade = GenericRelation('fundo.Quantidade', related_query_name='qtd_fundo_off')
+    relacao_movimentacao = GenericRelation('fundo.Movimentacao', related_query_name='mov_fundo_off')
     boleta_passivo = GenericRelation('BoletaPassivo', related_query_name='passivo')
 
     def clean_preco(self):
@@ -1017,6 +1033,13 @@ class BoletaFundoOffshore(BaseModel):
         boleta de passivo para o fundo sendo operado.
         """
         return self.ativo.gerido()
+
+    def checa_fundo_passivo(self, fundo):
+        """ fundo.Fundo -> Boolean
+        Recebe um fundo, e checa com o ativo para ver se o fundo é o ativo sendo
+        movimentado
+        """
+        return self.ativo.gestao == fundo and self.ativo.gestao.gestora.anima
 
     def fechar_boleta(self, data_referencia):
         """ datetime -> None
@@ -1243,7 +1266,8 @@ class BoletaFundoOffshore(BaseModel):
             if data_referencia == None:
                 data_referencia = self.data_cotizacao
             self.clean_financeiro()
-            mov = fm.Movimentacao(
+            from fundo.models import Quantidade, Movimentacao
+            mov = Movimentacao(
                 valor=self.financeiro,
                 fundo=self.fundo,
                 data=data_referencia,
@@ -1261,7 +1285,8 @@ class BoletaFundoOffshore(BaseModel):
             if data_referencia == None:
                 data_referencia = self.data_cotizacao
             self.clean_quantidade()
-            qtd = fm.Quantidade(
+            from fundo.models import Quantidade, Movimentacao
+            qtd = Quantidade(
                 qtd=self.quantidade.quantize(decimal.Decimal('1.000000')),
                 fundo=self.fundo,
                 data=data_referencia,
@@ -1422,8 +1447,8 @@ class BoletaEmprestimo(BaseModel):
 
     boleta_provisao = GenericRelation('BoletaProvisao', related_query_name='provisao')
     boleta_CPR = GenericRelation('BoletaCPR', related_query_name='CPR')
-    relacao_quantidade = GenericRelation(Quantidade, related_query_name='qtd_emprestimo')
-    relacao_movimentacao = GenericRelation(Movimentacao, related_query_name='mov_emprestimo')
+    relacao_quantidade = GenericRelation('fundo.Quantidade', related_query_name='qtd_emprestimo')
+    relacao_movimentacao = GenericRelation('fundo.Movimentacao', related_query_name='mov_emprestimo')
 
     class Meta:
         verbose_name_plural = "Boletas de Empréstimo"
@@ -1715,6 +1740,7 @@ class BoletaEmprestimo(BaseModel):
             # Criar Movimentacao do Ativo
             if self.data_liquidacao is not None:
                 if self.data_liquidacao > self.data_operacao:
+                    from fundo.models import Quantidade, Movimentacao
                     acao_movimentacao = Movimentacao(
                         # Valor da movimentação deve ser a contraparte da entrada
                         # de caixa. Desta maneira, o aluguel do ativo entra no cálculo
@@ -1761,8 +1787,8 @@ class BoletaCambio(BaseModel):
 
     boleta_provisao = GenericRelation('BoletaProvisao', related_query_name='provisao')
     boleta_CPR = GenericRelation('BoletaCPR', related_query_name='CPR')
-    relacao_quantidade = GenericRelation(Quantidade, related_query_name='qtd_cambio')
-    relacao_movimentacao = GenericRelation(Movimentacao, related_query_name='mov_cambio')
+    relacao_quantidade = GenericRelation('fundo.Quantidade', related_query_name='qtd_cambio')
+    relacao_movimentacao = GenericRelation('fundo.Movimentacao', related_query_name='mov_cambio')
 
     def criar_boleta_CPR_origem(self):
         """
@@ -1872,7 +1898,8 @@ class BoletaProvisao(BaseModel):
         Cria a movimentação do caixa
         """
         if self.relacao_movimentacao.exists() == False:
-            mov = fm.Movimentacao(
+            from fundo.models import Quantidade, Movimentacao
+            mov = Movimentacao(
                 valor=self.financeiro,
                 fundo=self.fundo,
                 data=self.data_pagamento,
@@ -1889,7 +1916,8 @@ class BoletaProvisao(BaseModel):
         Cria a quantidade do caixa.
         """
         if self.relacao_quantidade.exists() == False:
-            qtd = fm.Quantidade(
+            from fundo.models import Quantidade, Movimentacao
+            qtd = Quantidade(
                 qtd=self.financeiro,
                 fundo=self.fundo,
                 data=self.data_pagamento,

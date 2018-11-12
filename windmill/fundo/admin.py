@@ -6,7 +6,7 @@ from import_export import resources, fields
 from import_export.admin import ImportExportModelAdmin
 from import_export.widgets import ForeignKeyWidget
 from django.contrib.contenttypes.admin import GenericTabularInline
-from .models import Fundo, Administradora, Gestora, Distribuidora, Corretora, Contato, Carteira, Movimentacao, Quantidade, Vertice
+from .models import Fundo, Administradora, Gestora, Distribuidora, Corretora, Contato, Carteira, Vertice
 from ativos.models import Pais
 import ativos.forms
 
@@ -16,8 +16,6 @@ admin.site.register(Distribuidora)
 admin.site.register(Corretora)
 admin.site.register(Contato)
 admin.site.register(Carteira)
-admin.site.register(Movimentacao)
-admin.site.register(Quantidade)
 admin.site.register(Vertice)
 
 class FundoResource(resources.ModelResource):

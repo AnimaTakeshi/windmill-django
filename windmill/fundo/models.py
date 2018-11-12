@@ -92,8 +92,8 @@ class Fundo(BaseModel):
     custodia = models.ForeignKey("Custodiante", on_delete=models.PROTECT,
         null=True, blank=True)
     # Tipo de fundo - Ações, Renda Fixa, Imobiliário, etc... Importante
-    # para determinação da metodologia de cálculo do IR.
     categoria = models.CharField("Categoria do Fundo", max_length=40,
+    # para determinação da metodologia de cálculo do IR.
         null=True, blank=True, choices=CATEGORIAS)
     # Data de constituição do fundo
     data_de_inicio = models.DateField(null=True, blank=True)
@@ -180,6 +180,16 @@ class Fundo(BaseModel):
         fechamento.
         """
         pass
+
+    def fechar_boletas_acao(self, data_referencia):
+        """
+        Pega todas as boletas de ação do fundo, para a data de referência, e
+        executa o fechamento delas.
+        """
+        from boletagem.models import BoletaAcao
+        boletas = BoletaAcao.objects.filter(fundo=self, data_operacao=data_referencia)
+        for boleta in boletas:
+            boleta.fechar_boleta()
 
 class Administradora(models.Model):
     """
