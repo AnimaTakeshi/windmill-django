@@ -41,6 +41,7 @@ class Ativo(models.Model):
     pais = models.ForeignKey(Pais, on_delete=models.PROTECT, null=True, blank=True)
     isin = models.CharField(max_length=25, unique=True, null=True, blank=True)
     vertice = GenericRelation('fundo.Vertice')
+    descricao = models.TextField(null=True, blank=True)
 
     class Meta:
         ordering = ['nome']
@@ -100,6 +101,7 @@ class Caixa(Ativo):
     zeragem = models.ForeignKey(Ativo, blank=True, null=True,
         on_delete=models.PROTECT, default=None, related_name='caixas')
     custodia = models.ForeignKey('fundo.Custodiante', on_delete=models.PROTECT)
+    corretora = models.ForeignKey('fundo.Corretora', on_delete=models.PROTECT)
 
     class Meta:
         verbose_name_plural = "Caixas"

@@ -14,3 +14,11 @@ class FundoUnitTests(TestCase):
     """
     Guarda os UnitTests do modelo Fundo
     """
+    # Teste - fechar boletas de ação
+    # Teste - fechar boletas de renda fixa local
+    # Teste - fechar boletas de renda fixa Offshore
+    # Teste - fechar boletas de fundo local
+    # Teste - fechar boletas de fundo local com o fundo como ativo negociado
+    # Teste - fechar boletas de fundo offshore
+    # Teste - fechar boletas de fundo offshore com o fundo como ativo negociado
+    # Teste - fechar boleas de passivo.

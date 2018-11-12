@@ -86,3 +86,38 @@ class Preco(BaseModel):
 
     class Meta:
         unique_together = (('ativo', 'data_referencia'),)
+
+class Provento(BaseModel):
+    """
+    Armazena informações de proventos de ativos.
+    """
+    TIPO = (
+        ('Dividendo', 'Dividendo'),
+        ('Juros sobre Capital Próprio', 'Juros sobre Capital Próprio'),
+        ('Stock Split/Inplit', 'Stock Split/Inplit'),
+        ('Direitos de Subscrição', 'Direitos de Subscrição'),
+        ('Bonificação de Ações', 'Bonificação de Ações'),
+    )
+
+    ativo = models.ForeignKey('ativos.Ativo', on_delete=models.PROTECT)
+    data_declaracao = models.DateField(null=True, blank=True)
+    # Data em que a posição do fundo é considerada para o cálculo do recebimento
+    # dos proventos.
+    data_com = models.DateField()
+    # Primeira data em que o ativo é negociado sem os direitos ao recebimento
+    # do provento
+    data_ex = models.DateField()
+    # Ocasionalmente, haverá dividendos sem data de pagamento provisionada.
+    data_pagamento = models.DateField(default=datetime.date.max)
+    tipo_provento = models.CharField(choices=TIPO, max_length=27)
+    # Dependendo do tipo de provento, o valor bruto significa algo diferente:
+    #     - Dividendo e JSCP: Valor bruto (sem IR) a ser pago por ação.
+    #     - Bonificação de ações e split de ações: o fator pelo qual a quantidade
+    #     de ações vai ser multiplicado.
+    #     - Direito de subscrição: fator de correção para o preço histórico
+    #     das ações.
+    valor_bruto = models.DecimalField(decimal_places=9, max_digits=18)
+    # No caso de direito de subscrição, indica quantos direitos por ação serão
+    # emitidos.
+    direito_por_acao = models.DecimalField(decimal_places=9, max_digits=11,
+        default=None, blank=True, null=True)

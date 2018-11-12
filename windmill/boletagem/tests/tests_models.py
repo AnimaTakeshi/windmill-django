@@ -1,6 +1,7 @@
 import datetime
 import decimal
 from model_mommy import mommy
+from model_mommy.recipe import related, Recipe
 import pytest
 from django.test import TestCase
 from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelation
@@ -9,6 +10,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 import boletagem.models as bm
 import fundo.models as fm
+import calendario.models as cm
 
 # Create your tests here.
 class BoletaEmprestimoUnitTests(TestCase):
@@ -22,8 +24,10 @@ class BoletaEmprestimoUnitTests(TestCase):
         self.boleta = mommy.make('boletagem.BoletaEmprestimo',
             data_operacao=datetime.date(year=2018, month=10, day=2),
             data_reversao=datetime.date(year=2018, month=10, day=3),
+            data_vencimento=datetime.date(year=2018, month=12, day=30),
             reversivel=True,
             quantidade=10000,
+            comissao=0,
             preco=decimal.Decimal(10).quantize(decimal.Decimal('1.000000')),
             taxa=decimal.Decimal(0.15).quantize(decimal.Decimal('1.000000'))
         )
@@ -369,12 +373,89 @@ class BoletaEmprestimoUnitTests(TestCase):
         # Verificar se a boleta liquidada gerou a boleta de provisão
         bol_prov = bm.BoletaProvisao.objects.get(content_type__pk=type.id, object_id=boleta_liquidada.id)
 
-    @pytest.mark.xfail
-    def test_fechar_boleta(self):
+    def test_criar_boleta_CPR(self):
         """
-        Testar fechamento de boleta de empréstimo
+        Cria a boleta de CPR associada ao contrato de aluguel.
         """
-        self.assertRaises(ValidationError, self.boleta.fechar_boleta)
+        copia = self.boleta
+        copia.id = None
+        copia.boleta_original = None
+        copia.save()
+
+        self.assertFalse(copia.boleta_CPR.exists())
+        copia.criar_boleta_CPR()
+        self.assertTrue(copia.boleta_CPR.exists())
+
+        cpr = bm.BoletaCPR.objects.get(object_id=copia.id)
+
+        self.assertEqual(cpr.valor_cheio, 0)
+        self.assertEqual(cpr.fundo, copia.fundo)
+        self.assertEqual(cpr.data_inicio, copia.data_operacao)
+        self.assertEqual(cpr.data_pagamento, copia.data_vencimento)
+        self.assertEqual(cpr.content_object, copia)
+        self.assertEqual(cpr.tipo, cpr.TIPO[3][0])
+
+    def test_fechar_boleta_data_operacao(self):
+        """
+        Testar fechamento de boleta de empréstimo na data de operacao. Deve
+        apenas criar a boleta de CPR.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.boleta_original = None
+        copia.save()
+
+        self.assertFalse(copia.boleta_CPR.exists())
+        copia.fechar_boleta(copia.data_operacao)
+        self.assertTrue(copia.boleta_CPR.exists())
+
+        cpr = bm.BoletaCPR.objects.get(object_id=copia.id)
+
+        self.assertEqual(cpr.valor_cheio, 0)
+        self.assertEqual(cpr.fundo, copia.fundo)
+        self.assertEqual(cpr.data_inicio, copia.data_operacao)
+        self.assertEqual(cpr.data_pagamento, copia.data_vencimento)
+        self.assertEqual(cpr.content_object, copia)
+        self.assertEqual(cpr.tipo, cpr.TIPO[3][0])
+
+    def test_fechar_boleta_data_vigencia_do_contrato(self):
+        copia = self.boleta
+        copia.id = None
+        copia.boleta_original = None
+        copia.save()
+
+        copia.fechar_boleta(copia.data_operacao)
+        tipo = ContentType.objects.get_for_model(copia)
+        cpr = bm.BoletaCPR.objects.get(object_id=copia.id, content_type__pk=tipo.id)
+
+        self.assertEqual(cpr.valor_cheio, 0)
+
+        copia.fechar_boleta(copia.data_operacao + datetime.timedelta(days=5))
+
+        cpr = bm.BoletaCPR.objects.get(object_id=copia.id, content_type__pk=tipo.id)
+
+        self.assertEqual(cpr.valor_cheio, copia.financeiro(copia.data_operacao + datetime.timedelta(days=5)))
+
+    def test_fechar_boleta_data_liquidacao(self):
+        copia = self.boleta
+        copia.id = None
+        copia.boleta_original = None
+        copia.save()
+
+        copia.fechar_boleta(copia.data_operacao)
+        tipo = ContentType.objects.get_for_model(copia)
+        cpr = bm.BoletaCPR.objects.get(object_id=copia.id, content_type__pk=tipo.id)
+        # Fechamento da boleta na data de operação.
+        self.assertEqual(cpr.valor_cheio, 0)
+
+        copia.data_liquidacao = copia.data_vencimento - datetime.timedelta(days=5)
+        copia.save()
+        copia.fechar_boleta(copia.data_liquidacao)
+
+        cpr = bm.BoletaCPR.objects.get(object_id=copia.id, content_type__pk=tipo.id)
+
+        self.assertEqual(cpr.valor_cheio, copia.financeiro(copia.data_liquidacao))
+        self.assertEqual(cpr.data_pagamento, copia.data_liquidacao)
 
 class BoletaAcaoUnitTests(TestCase):
     """
@@ -2561,3 +2642,731 @@ class BoletaPassivoUnitTests(TestCase):
         self.assertEqual(certificado_parcial.id, certificado_consumido_parcial.id)
         # Consome as cotas que sobraram
         self.assertEqual(certificado_parcial.cotas_aplicadas, qtd_certificado_parcial - (qtd_cotas_total_consumida - qtd_certificado_consumida))
+
+class BoletaProvisaoUnitTests(TestCase):
+    """
+    Classe de unit tests de Provisão
+    """
+    def setUp(self):
+        self.boleta = mommy.make('boletagem.BoletaProvisao',
+            estado=bm.BoletaProvisao.ESTADO[0][0]
+        )
+
+    # Teste para criação de movimentação de caixa
+    def test_criar_movimentacao(self):
+        """
+        Deve criar a movimentação financeira do caixa.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+
+        self.assertFalse(copia.relacao_movimentacao.exists())
+        copia.criar_movimentacao()
+        self.assertTrue(copia.relacao_movimentacao.exists())
+
+        mov = fm.Movimentacao.objects.get(object_id=copia.id)
+
+        self.assertEqual(mov.fundo, copia.fundo)
+        self.assertEqual(mov.valor, copia.financeiro)
+        self.assertEqual(mov.data, copia.data_pagamento)
+        self.assertEqual(mov.objeto_movimentacao, copia.caixa_alvo)
+
+    # Teste para criação de quantidade de caixa movimentado.
+    def test_criar_quantidade(self):
+        """
+        Cria a variação de quantidade do caixa. No caso do caixa, a variação
+        de quantidade e movimentação é a mesma.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+
+        self.assertFalse(copia.relacao_quantidade.exists())
+        copia.criar_quantidade()
+        self.assertTrue(copia.relacao_quantidade.exists())
+
+        qtd = fm.Quantidade.objects.get(object_id=copia.id)
+
+        self.assertEqual(qtd.fundo, copia.fundo)
+        self.assertEqual(qtd.qtd, copia.financeiro)
+        self.assertEqual(qtd.data, copia.data_pagamento)
+        self.assertEqual(qtd.objeto_quantidade, copia.caixa_alvo)
+
+    # Teste para fechamento da boleta, criando a movimentação e quantidade.
+    def test_fechar_boleta(self):
+        """
+        Cria tanto a quantidade quanto a movimentação do caixa.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+
+        self.assertFalse(copia.relacao_quantidade.exists())
+        self.assertFalse(copia.relacao_movimentacao.exists())
+        self.assertEqual(copia.estado, copia.ESTADO[0][0])
+        copia.fechar_boleta()
+        self.assertTrue(copia.relacao_quantidade.exists())
+        self.assertTrue(copia.relacao_movimentacao.exists())
+        self.assertEqual(copia.estado, copia.ESTADO[1][0])
+
+class BoletaCambioUnitTests(TestCase):
+    """
+    Classe de unit tests de cambio.
+    """
+    # Setup: dois caixas distintos, duas moedas distintas
+    def setUp(self):
+        brl = mommy.make('ativos.Moeda',
+            nome='Real',
+            codigo='BRL'
+        )
+        brl.full_clean()
+        brl.save()
+        usd = mommy.make('ativos.Moeda',
+            nome='Dólar',
+            codigo='USD'
+        )
+        usd.full_clean()
+        usd.save()
+        brasil = mommy.make('ativos.Pais',
+            nome='Brasil',
+            moeda=brl
+        )
+        brasil.full_clean()
+        brasil.save()
+        eua = mommy.make('ativos.Pais',
+            nome='EUA',
+            moeda=usd
+        )
+        eua.full_clean()
+        eua.save()
+
+        caixa_origem = mommy.make('ativos.Caixa',
+            nome='Caixa_USD',
+            moeda=usd,
+            pais=eua
+        )
+        caixa_origem.full_clean()
+        caixa_origem.save()
+        caixa_destino = mommy.make('ativos.Caixa',
+            nome='Caixa_BRL',
+            moeda=brl,
+            pais=brasil
+        )
+        caixa_destino.full_clean()
+        caixa_destino.save()
+        self.boleta = mommy.make('boletagem.BoletaCambio',
+            caixa_origem=caixa_origem,
+            caixa_destino=caixa_destino,
+            cambio=decimal.Decimal('3.5'),
+            financeiro_origem=decimal.Decimal('35000'),
+            financeiro_final=decimal.Decimal('10000'),
+            data_operacao=datetime.date(year=2018, month=10, day=30),
+            data_liquidacao_origem=datetime.date(year=2018, month=11, day=2),
+            data_liquidacao_destino=datetime.date(year=2018, month=11, day=1)
+        )
+
+
+    # Teste - cria boleta de CPR do caixa origem.
+    def test_cria_CPR_origem(self):
+        """
+        Testa a criação de uma boleta de CPR
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+
+        self.assertFalse(copia.boleta_CPR.exists())
+        copia.criar_boleta_CPR_origem()
+        self.assertEqual(copia.boleta_CPR.count(), 1)
+
+        boleta = bm.BoletaCPR.objects.get(object_id=copia.id)
+
+        self.assertEqual(boleta.valor_cheio, -abs(copia.financeiro_origem))
+        self.assertEqual(boleta.fundo, copia.fundo)
+        self.assertEqual(boleta.data_inicio, copia.data_operacao)
+        self.assertEqual(boleta.data_pagamento, copia.data_liquidacao_origem)
+        self.assertEqual(boleta.content_object, copia)
+
+    def test_cria_apenas_uma_boletaCPR(self):
+        """
+        Testa a criação de apenas uma boleta de CPR do caixa origem
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+
+        self.assertFalse(copia.boleta_CPR.exists())
+        copia.criar_boleta_CPR_origem()
+        self.assertEqual(copia.boleta_CPR.count(), 1)
+        copia.criar_boleta_CPR_origem()
+        self.assertEqual(copia.boleta_CPR.count(), 1)
+
+    # Teste - cria boleta de CPR do caixa destino.
+    def test_cria_CPR_destino(self):
+        """
+        Testa a criação da boleta de CPR da moeda destino
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+
+        self.assertFalse(copia.boleta_CPR.exists())
+        copia.criar_boleta_CPR_destino()
+        self.assertEqual(copia.boleta_CPR.count(), 1)
+
+        boleta = bm.BoletaCPR.objects.get(object_id=copia.id)
+
+        self.assertEqual(boleta.valor_cheio, abs(copia.financeiro_final))
+        self.assertEqual(boleta.fundo, copia.fundo)
+        self.assertEqual(boleta.data_inicio, copia.data_operacao)
+        self.assertEqual(boleta.data_pagamento, copia.data_liquidacao_destino)
+        self.assertEqual(boleta.content_object, copia)
+
+    def test_cria_so_uma_boleta_CPR_destino(self):
+        """
+        Testa a criação de apenas uma boleta de CPR.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+
+        self.assertFalse(copia.boleta_CPR.exists())
+        copia.criar_boleta_CPR_destino()
+        self.assertEqual(copia.boleta_CPR.count(), 1)
+        copia.criar_boleta_CPR_destino()
+        self.assertEqual(copia.boleta_CPR.count(), 1)
+
+    # Teste - cria boleta de provisao do caixa origem
+    def test_cria_provisao_origem(self):
+        """
+        Testa a criação de boleta de provisão do caixa origem
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+
+        self.assertFalse(copia.boleta_provisao.exists())
+        copia.criar_boleta_provisao_origem()
+        self.assertEqual(copia.boleta_provisao.count(), 1)
+
+        provisao = bm.BoletaProvisao.objects.get(object_id=copia.id)
+
+        self.assertEqual(provisao.financeiro, -abs(copia.financeiro_origem))
+        self.assertEqual(provisao.caixa_alvo, copia.caixa_origem)
+        self.assertEqual(provisao.fundo, copia.fundo)
+        self.assertEqual(provisao.data_pagamento, copia.data_liquidacao_origem)
+
+    def test_cria_apenas_uma_boleta_prov_origem(self):
+        """
+        Testa se é feita apenas uma boleta de origem, não importa quantas
+        vezes a função de criação é chamada.
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+
+        self.assertFalse(copia.boleta_provisao.exists())
+        copia.criar_boleta_provisao_origem()
+        self.assertEqual(copia.boleta_provisao.count(), 1)
+        copia.criar_boleta_provisao_origem()
+        self.assertEqual(copia.boleta_provisao.count(), 1)
+
+    # Teste - cria boleta de provisao do caixa destino.
+    def test_cria_provisao_destino(self):
+        """
+        Testa a criação de boleta de provisão do caixa destino
+        """
+        copia = self.boleta
+        copia.id = None
+        copia.save()
+
+        self.assertFalse(copia.boleta_provisao.exists())
+        copia.criar_boleta_provisao_destino()
+        self.assertEqual(copia.boleta_provisao.count(), 1)
+
+        provisao = bm.BoletaProvisao.objects.get(object_id=copia.id)
+
+        self.assertEqual(provisao.financeiro, abs(copia.financeiro_final))
+        self.assertEqual(provisao.caixa_alvo, copia.caixa_destino)
+        self.assertEqual(provisao.fundo, copia.fundo)
+        self.assertEqual(provisao.data_pagamento, copia.data_liquidacao_destino)
+
+class BoletaCPRUnitTests(TestCase):
+    """
+    Testa a criação de quantidades e movimentações de CPR de acordo com a boleta
+    de CPR registrada.
+    """
+    # Setup: Boleta de diferimento, boleta de diarização, boleta de CPR. Capitalização
+    # diária, mensal, e nenhuma. Valor cheio preenchido. Valor parcial preenchido. 9
+    # boletas diferentes.
+    def setUp(self):
+        """
+        9 tipos de boletas diferentes:
+        - Diferimento valor cheio:
+            - Diária
+            - Mensal
+        - Diferimento valor parcial:
+            - Diária
+            - Mensal
+        - Acúmulo valor cheio:
+            - Diária
+            - Mensal
+        - Acúmulo valor parcial:
+            - Diária
+            - Mensal
+        """
+        Feriado1 = Recipe('calendario.Feriado',
+            data=datetime.date(year=2018, month=9, day=20)
+        )
+        feriado1 = Feriado1.make()
+        Feriado2 = Recipe('calendario.Feriado',
+            data=datetime.date(year=2018, month=9, day=25)
+        )
+        feriado2 = Feriado2.make()
+        Calendario_teste = Recipe('calendario.Calendario',
+            feriados=related(Feriado1, Feriado2)
+        )
+        calendario = Calendario_teste.make()
+        custodia = mommy.make('fundo.Custodiante')
+        fundo = mommy.make('fundo.Fundo',
+            calendario=calendario,
+            custodia=custodia
+        )
+        self.boleta_diferimento_parcial_diario = mommy.make('boletagem.BoletaCPR',
+            valor_parcial=decimal.Decimal('1.37'), # Valor cheio = (dia_trabalho_total + 1)*valor_parcial
+            capitalizacao=bm.BoletaCPR.CAPITALIZACAO[0][0], # Capitalização diária
+            tipo=bm.BoletaCPR.TIPO[1][0], # Tipo diferimento
+            data_inicio=datetime.date(year=2018, month=9, day=10), # No caso de diferimento, começa com o valor_cheio.
+            data_vigencia_inicio=datetime.date(year=2018, month=9, day=17), # última data em que o CPR fica com seu valor cheio. Após esta data, o valor deve começar a converter para 0
+            data_vigencia_fim=datetime.date(year=2018, month=10, day=17), # última data em que o CPR possui algum valor que, nesta data, deve ser igual ao valor parcial
+            data_pagamento=datetime.date(year=2018, month=10, day=18), # Não faz sentido ser mais que um dia após o término da vigência, pois o valor fica zerado após a vigência.
+            fundo=fundo
+        )
+        self.boleta_diferimento_cheio_diario = mommy.make('boletagem.BoletaCPR',
+            valor_cheio=decimal.Decimal('28.77'), # Valor cheio = (dia_trabalho_total + 1)*valor_parcial
+            capitalizacao=bm.BoletaCPR.CAPITALIZACAO[0][0], # Capitalização diária
+            tipo=bm.BoletaCPR.TIPO[1][0], # Tipo diferimento
+            data_inicio=datetime.date(year=2018, month=9, day=10), # No caso de diferimento, começa com o valor_cheio.
+            data_vigencia_inicio=datetime.date(year=2018, month=9, day=17), # última data em que o CPR fica com seu valor cheio. Após esta data, o valor deve começar a converter para 0
+            data_vigencia_fim=datetime.date(year=2018, month=10, day=17), # última data em que o CPR possui algum valor que, nesta data, deve ser igual ao valor parcial
+            data_pagamento=datetime.date(year=2018, month=10, day=18), # Não faz sentido ser mais que um dia após o término da vigência, pois o valor fica zerado após a vigência.
+            fundo=fundo
+        )
+        self.boleta_diferimento_parcial_mensal = mommy.make('boletagem.BoletaCPR',
+            valor_parcial=decimal.Decimal('100'), # Valor cheio = (dia_trabalho_total + 1)*valor_parcial
+            capitalizacao=bm.BoletaCPR.CAPITALIZACAO[1][0], # Capitalização mensal
+            tipo=bm.BoletaCPR.TIPO[1][0], # Tipo diferimento
+            data_inicio=datetime.date(year=2018, month=1, day=1), # No caso de diferimento, começa com o valor_cheio.
+            data_vigencia_inicio=datetime.date(year=2018, month=1, day=31), # última data em que o CPR fica com seu valor cheio. Após esta data, o valor deve começar a converter para 0
+            data_vigencia_fim=datetime.date(year=2018, month=12, day=31), # última data em que o CPR possui algum valor que, nesta data, deve ser igual ao valor parcial
+            data_pagamento=datetime.date(year=2019, month=1, day=1), # Não faz sentido ser mais que um dia após o término da vigência, pois o valor fica zerado após a vigência.
+            fundo=fundo
+        )
+        self.boleta_diferimento_cheio_mensal = mommy.make('boletagem.BoletaCPR',
+            valor_cheio=decimal.Decimal('1200'), # Valor cheio = (dia_trabalho_total + 1)*valor_parcial
+            capitalizacao=bm.BoletaCPR.CAPITALIZACAO[1][0], # Capitalização mensal
+            tipo=bm.BoletaCPR.TIPO[1][0], # Tipo diferimento
+            data_inicio=datetime.date(year=2018, month=1, day=1), # No caso de diferimento, começa com o valor_cheio.
+            data_vigencia_inicio=datetime.date(year=2018, month=1, day=31), # última data em que o CPR fica com seu valor cheio. Após esta data, o valor deve começar a converter para 0
+            data_vigencia_fim=datetime.date(year=2018, month=12, day=31), # última data em que o CPR possui algum valor que, nesta data, deve ser igual ao valor parcial
+            data_pagamento=datetime.date(year=2019, month=1, day=1), # Não faz sentido ser mais que um dia após o término da vigência, pois o valor fica zerado após a vigência.
+            fundo=fundo
+        )
+        self.boleta_acumulo_parcial_diario = mommy.make('boletagem.BoletaCPR',
+            valor_parcial=decimal.Decimal('1.37'), # Valor cheio = (dia_trabalho_total + 1)*valor_parcial
+            capitalizacao=bm.BoletaCPR.CAPITALIZACAO[0][0], # Capitalização diária
+            tipo=bm.BoletaCPR.TIPO[0][0], # Tipo Acumulo
+            data_inicio=datetime.date(year=2018, month=9, day=17), # No caso de diferimento, começa com o valor_cheio.
+            data_vigencia_inicio=datetime.date(year=2018, month=9, day=17), # última data em que o CPR fica com seu valor cheio. Após esta data, o valor deve começar a converter para 0
+            data_vigencia_fim=datetime.date(year=2018, month=10, day=17), # última data em que o CPR possui algum valor que, nesta data, deve ser igual ao valor parcial
+            data_pagamento=datetime.date(year=2018, month=10, day=18), # Não faz sentido ser mais que um dia após o término da vigência, pois o valor fica zerado após a vigência.
+            fundo=fundo
+        )
+        self.boleta_acumulo_cheio_diario = mommy.make('boletagem.BoletaCPR',
+            valor_cheio=decimal.Decimal('28.77'), # Valor cheio = (dia_trabalho_total + !)*valor_parcial
+            capitalizacao=bm.BoletaCPR.CAPITALIZACAO[0][0], # Capitalização diária
+            tipo=bm.BoletaCPR.TIPO[0][0], # Tipo acumulo
+            data_inicio=datetime.date(year=2018, month=9, day=10), # No caso de diferimento, começa com o valor_cheio.
+            data_vigencia_inicio=datetime.date(year=2018, month=9, day=17), # última data em que o CPR fica com seu valor cheio. Após esta data, o valor deve começar a converter para 0
+            data_vigencia_fim=datetime.date(year=2018, month=10, day=17), # última data em que o CPR possui algum valor que, nesta data, deve ser igual ao valor parcial
+            data_pagamento=datetime.date(year=2018, month=10, day=18), # Não faz sentido ser mais que um dia após o término da vigência, pois o valor fica zerado após a vigência.
+            fundo=fundo
+        )
+        self.boleta_acumulo_parcial_mensal = mommy.make('boletagem.BoletaCPR',
+            valor_parcial=decimal.Decimal('100'), # Valor cheio = (dia_trabalho_total + !)*valor_parcial
+            capitalizacao=bm.BoletaCPR.CAPITALIZACAO[1][0], # Capitalização diária
+            tipo=bm.BoletaCPR.TIPO[0][0], # Tipo acumulo
+            data_inicio=datetime.date(year=2018, month=1, day=1), # No caso de diferimento, começa com o valor_cheio.
+            data_vigencia_inicio=datetime.date(year=2018, month=1, day=31), # última data em que o CPR fica com seu valor cheio. Após esta data, o valor deve começar a converter para 0
+            data_vigencia_fim=datetime.date(year=2018, month=12, day=31), # última data em que o CPR possui algum valor que, nesta data, deve ser igual ao valor parcial
+            data_pagamento=datetime.date(year=2019, month=1, day=1), # Não faz sentido ser mais que um dia após o término da vigência, pois o valor fica zerado após a vigência.
+            fundo=fundo
+        )
+        self.boleta_acumulo_cheio_mensal = mommy.make('boletagem.BoletaCPR',
+            valor_cheio=decimal.Decimal('1200'), # Valor cheio = (dia_trabalho_total + !)*valor_parcial
+            capitalizacao=bm.BoletaCPR.CAPITALIZACAO[1][0], # Capitalização diária
+            tipo=bm.BoletaCPR.TIPO[0][0], # Tipo acumulo
+            data_inicio=datetime.date(year=2018, month=1, day=1), # No caso de diferimento, começa com o valor_cheio.
+            data_vigencia_inicio=datetime.date(year=2018, month=1, day=31), # última data em que o CPR fica com seu valor cheio. Após esta data, o valor deve começar a converter para 0
+            data_vigencia_fim=datetime.date(year=2018, month=12, day=31), # última data em que o CPR possui algum valor que, nesta data, deve ser igual ao valor parcial
+            data_pagamento=datetime.date(year=2019, month=1, day=1), # Não faz sentido ser mais que um dia após o término da vigência, pois o valor fica zerado após a vigência.
+            fundo=fundo
+        )
+        boleta_Acao = mommy.make('boletagem.BoletaAcao',
+            data_operacao=datetime.date(year=2018, month=11, day=1),
+            data_liquidacao=datetime.date(year=2018, month=11, day=5),
+            operacao='C',
+            quantidade=100,
+            preco=decimal.Decimal(10).quantize(decimal.Decimal('1.0000000'))
+        )
+        self.boleta_emprestimo = mommy.make('boletagem.BoletaEmprestimo',
+            data_operacao=datetime.date(year=2018, month=10, day=2),
+            data_reversao=datetime.date(year=2018, month=10, day=3),
+            data_vencimento=datetime.date(year=2018, month=12, day=30),
+            reversivel=True,
+            quantidade=10000,
+            comissao=0,
+            preco=decimal.Decimal(10).quantize(decimal.Decimal('1.000000')),
+            taxa=decimal.Decimal(0.15).quantize(decimal.Decimal('1.000000'))
+        )
+        self.boleta_CPR = mommy.make('boletagem.BoletaCPR',
+            valor_cheio=decimal.Decimal('1200'),
+            data_inicio=datetime.date(year=2018, month=10, day=1),
+            data_pagamento=datetime.date(year=2018, month=10, day=5),
+            fundo=fundo,
+            content_object=boleta_Acao
+        )
+
+
+    # Teste - cálculo do valor parcial, dado o valor cheio.
+    # Teste - boleta de diarização - criação da movimentação de saída a partir do valor cheio
+    # Teste - boleta de diarização - criação da movimentação de saída a partir do valor parcial
+    # Teste - boleta de diarização - cálculo de valor presente durante vigencia
+    # Teste - boleta de diarização - cálculo de valor presente após vigencia antes do pagamento
+    # Teste - boleta de diarização - criação da quantidade inicial a partir do valor parcial
+    # Teste - boleta de diarização - criação da quantidade final
+    # Teste - boleta de diferimento - criação da movimentação de entrada
+    # Teste - boleta de diferimento - criação da quantidade
+    # Teste - boleta de CPR - criação da movimentação de entrada
+    # Teste - boleta de CPR - criação da movimentação de saída
+    def test_calcula_valor_presente_parcial_acumulo_diario(self):
+        copia = self.boleta_acumulo_parcial_diario
+        dia = datetime.timedelta(days=1)
+        # Testa se o valor presente no início da data de vigência é igual ao valor parcial
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_inicio), copia.valor_parcial)
+        # Testa se o valor presente acumula corretamente no meio da vigência.
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_inicio + dia),
+            (copia.fundo.calendario.dia_trabalho_total(copia.data_vigencia_inicio, copia.data_vigencia_inicio + dia))*copia.valor_parcial)
+        # Testa se o valor presente fica igual ao valor cheio na data final de vigencia
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_fim),
+            (copia.fundo.calendario.dia_trabalho_total(copia.data_vigencia_inicio, copia.data_vigencia_fim))*copia.valor_parcial)
+        # Após o fim da data de vigência, o valor final da boleta deve permanecer igual ao valor cheio
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_fim + dia),
+            (copia.fundo.calendario.dia_trabalho_total(copia.data_vigencia_inicio, copia.data_vigencia_fim))*copia.valor_parcial)
+
+    def test_calcula_valor_presente_cheio_acumulo_diario(self):
+        copia = self.boleta_acumulo_cheio_diario
+        dia = datetime.timedelta(days=5)
+        parcial = copia.valor_cheio/(copia.fundo.calendario.dia_trabalho_total(copia.data_vigencia_inicio, copia.data_vigencia_fim))
+        print('valor parcial ' + str(parcial))
+        # Testa se o valor presente no início da data de vigência é igual ao valor parcial
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_inicio), parcial)
+        # Testa se o valor paresente no meio da vigência acumula corretamente
+        print(copia.data_vigencia_inicio + dia)
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_inicio + dia), parcial*4)
+        # Testa se o valor presente fica igual ao valor cheio ao fim da vigência
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_fim), copia.valor_cheio)
+        # Testa se o valor presente permanece inalterado após a vigencia
+        self.assertEqual(copia.valor_presente(copia.data_pagamento), copia.valor_cheio)
+
+    def test_calcula_valor_presente_parcial_diferimento_diario(self):
+        copia = self.boleta_diferimento_parcial_diario
+        dia = datetime.timedelta(days=5)
+        cheio = (copia.fundo.calendario.dia_trabalho_total(copia.data_vigencia_inicio, copia.data_vigencia_fim))*copia.valor_parcial
+        # Testa se o valor presente é igual ao valor cheio antes da vigencia
+        self.assertEqual(copia.valor_presente(copia.data_inicio), cheio)
+        # Testa se, na data de início da vigência, o valor presente é igual ao cheio
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_inicio), cheio)
+        # Testa se o valor presente é descontado corretamente
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_inicio + dia), cheio - copia.valor_parcial*3)
+        # Testa se o valor, ao fim da vigência, fica igual ao valor parcial
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_fim), copia.valor_parcial)
+        # Testa se, após a vigencia, o diferimento fica zerado.
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_fim + dia), 0)
+
+    def test_calcula_valor_presente_cheio_diferimento_diario(self):
+        copia = self.boleta_diferimento_cheio_diario
+        dia = datetime.timedelta(days=5)
+        parcial = copia.valor_cheio/(copia.fundo.calendario.dia_trabalho_total(copia.data_vigencia_inicio, copia.data_vigencia_fim))
+
+        # Testa se o valor presente é igual ao valor cheio antes da vigencia
+        self.assertEqual(copia.valor_presente(copia.data_inicio), copia.valor_cheio)
+        # Testa se, na data de início da vigência, o valor presente é igual ao cheio
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_inicio), copia.valor_cheio)
+        # Testa se o valor presente é descontado corretamente
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_inicio + dia), copia.valor_cheio - parcial*3)
+        # Testa se o valor, ao fim da vigência, fica igual ao valor parcial
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_fim), parcial)
+        # Testa se, após a vigencia, o diferimento fica zerado.
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_fim + dia), 0)
+
+    def test_calcula_valor_presente_parcial_acumulo_mensal(self):
+        copia = self.boleta_acumulo_parcial_mensal
+        dia = datetime.timedelta(days=65)
+        cheio = (copia.fundo.calendario.conta_fim_mes(copia.data_vigencia_inicio, copia.data_vigencia_fim))*copia.valor_parcial
+        # Testa se o valor
+
+        # Testa se o valor presente no início da data de vigência é igual ao valor parcial
+        print(copia.valor_parcial)
+        self.assertEqual(copia.valor_presente(copia.fundo.calendario.fim_mes(copia.data_vigencia_inicio)), copia.valor_parcial)
+        # Testa se o valor paresente no meio da vigência acumula corretamente
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_inicio + dia), copia.valor_parcial*3)
+        # Testa se o valor presente fica igual ao valor cheio ao fim da vigência
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_fim), cheio)
+        # Testa se o valor presente permanece inalterado após a vigencia
+        self.assertEqual(copia.valor_presente(copia.data_pagamento), cheio)
+
+    def test_calcula_valor_presente_cheio_acumulo_mensal(self):
+        copia = self.boleta_acumulo_cheio_mensal
+        dia = datetime.timedelta(days=65)
+        parcial = copia.valor_cheio/(copia.fundo.calendario.conta_fim_mes(copia.data_vigencia_inicio, copia.data_vigencia_fim))
+        # Testa se o valor presente no início da data de vigência é igual ao valor parcial
+        self.assertEqual(copia.valor_presente(copia.fundo.calendario.fim_mes(copia.data_vigencia_inicio)), parcial)
+        # Testa se o valor paresente no meio da vigência acumula corretamente
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_inicio + dia), parcial*3)
+        # Testa se o valor presente fica igual ao valor cheio ao fim da vigência
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_fim), copia.valor_cheio)
+        # Testa se o valor presente permanece inalterado após a vigencia
+        self.assertEqual(copia.valor_presente(copia.data_pagamento), copia.valor_cheio)
+
+    @pytest.mark.xfail
+    def test_calcula_valor_presente_parcial_diferimento_mensal(self):
+        copia = self.boleta_diferimento_parcial_mensal
+        dia = datetime.timedelta(days=65)
+        cheio = (copia.fundo.calendario.conta_fim_mes(copia.data_vigencia_inicio, copia.data_vigencia_fim))*copia.valor_parcial
+        # Testa se o valor presente é igual ao valor cheio antes da vigencia
+        self.assertEqual(copia.valor_presente(copia.data_inicio), cheio)
+        # Testa se, na data de início da vigência, o valor presente é igual ao cheio
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_inicio), cheio)
+        # Testa se o valor presente é descontado corretamente
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_inicio + dia), cheio - copia.valor_parcial*2)
+        # Testa se o valor, ao fim da vigência, fica igual ao valor parcial
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_fim), copia.valor_parcial)
+        # Testa se, após a vigencia, o diferimento fica zerado.
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_fim + dia), 0)
+
+    @pytest.mark.xfail
+    def test_calcula_valor_presente_cheio_diferimento_mensal(self):
+        copia = self.boleta_diferimento_cheio_mensal
+        dia = datetime.timedelta(days=65)
+        parcial = copia.valor_cheio/(copia.fundo.calendario.conta_fim_mes(copia.data_vigencia_inicio, copia.data_vigencia_fim))
+        # Testa se o valor presente é igual ao valor cheio antes da vigencia
+        self.assertEqual(copia.valor_presente(copia.data_inicio), copia.valor_cheio)
+        # Testa se, na data de início da vigência, o valor presente é igual ao cheio
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_inicio), copia.valor_cheio)
+        # Testa se o valor presente é descontado corretamente
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_inicio + dia), copia.valor_cheio - parcial*2)
+        # Testa se o valor, ao fim da vigência, fica igual ao valor parcial
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_fim), parcial)
+        # Testa se, após a vigencia, o diferimento fica zerado.
+        self.assertEqual(copia.valor_presente(copia.data_vigencia_fim + dia), 0)
+
+    # Teste - criação de vértice - boleta acumulo diario parcial
+    """
+    Criação de vértices:
+        - CPR: movimentação de entrada e saída. Quantidade constante igual ao
+    financeiro da boleta.
+        - Empréstimo: Sem movimentação. Apenas quantidade igual ao valor do
+    empréstimo a ser cobrado.
+        - Diferimento: Movimentação de entrada na data de ínicio.
+        - Acúmulo: Projeta o
+
+    """
+    def test_cria_vertice_acumulo_diario_parcial(self):
+        """
+        Em boletas anteriores à data de pagamento, deve haver apenas vértices
+        com quantidades, sem movimentação.
+        Deve haver movimentação apenas na data de pagamento, sem quantidade.
+        """
+        copia = self.boleta_acumulo_parcial_diario
+        copia.id = None
+        copia.save()
+        data = copia.data_vigencia_inicio + datetime.timedelta(days=1)
+
+        self.assertFalse(copia.relacao_vertice.exists())
+        copia.criar_vertice(data)
+        self.assertEqual(copia.relacao_vertice.count(), 1)
+
+        vertice = fm.Vertice.objects.get(object_id=copia.id)
+
+        self.assertEqual(copia.valor_presente(data), vertice.valor)
+        self.assertEqual(copia, vertice.content_object)
+        self.assertEqual(data, vertice.data)
+        self.assertEqual(vertice.movimentacao, 0)
+        self.assertEqual(copia.fundo, vertice.fundo)
+
+    # Teste - criação de vértice - boleta acumulo diario cheio
+    def test_cria_vertice_acumulo_diario_cheio(self):
+        copia = self.boleta_acumulo_cheio_diario
+        copia.id = None
+        copia.save()
+        data = copia.data_vigencia_inicio + datetime.timedelta(days=1)
+
+        self.assertFalse(copia.relacao_vertice.exists())
+        copia.criar_vertice(data)
+        self.assertEqual(copia.relacao_vertice.count(), 1)
+
+        vertice = fm.Vertice.objects.get(object_id=copia.id)
+
+        self.assertEqual(copia.valor_presente(data), vertice.valor)
+        self.assertEqual(copia, vertice.content_object)
+        self.assertEqual(data, vertice.data)
+        self.assertEqual(vertice.movimentacao, 0)
+        self.assertEqual(copia.fundo, vertice.fundo)
+
+    # Teste - criação de vértice - boleta diferimento diario parcial
+    def test_cria_vertice_diferimento_diario_parcial(self):
+        copia = self.boleta_diferimento_parcial_diario
+        copia.id = None
+        copia.save()
+        data = copia.data_inicio
+
+        self.assertFalse(copia.relacao_vertice.exists())
+        copia.criar_vertice(data)
+        self.assertEqual(copia.relacao_vertice.count(), 1)
+
+        vertice = fm.Vertice.objects.get(object_id=copia.id)
+
+        self.assertEqual(copia.valor_presente(data), vertice.valor)
+        self.assertEqual(vertice.data, data)
+        self.assertEqual(copia, vertice.content_object)
+        self.assertEqual(vertice.movimentacao, copia.valor_presente(data))
+        self.assertEqual(copia.fundo, vertice.fundo)
+
+    # Teste - criação de vértice - boleta diferimento diario cheio
+    def test_cria_vertice_diferimento_diario_cheio(self):
+        copia = self.boleta_diferimento_cheio_diario
+        copia.id = None
+        copia.save()
+        data = copia.data_inicio
+
+        self.assertFalse(copia.relacao_vertice.exists())
+        copia.criar_vertice(data)
+        self.assertEqual(copia.relacao_vertice.count(), 1)
+
+        vertice = fm.Vertice.objects.get(object_id=copia.id)
+
+        self.assertEqual(copia.valor_presente(data), vertice.valor)
+        self.assertEqual(vertice.data, data)
+        self.assertEqual(copia, vertice.content_object)
+        self.assertEqual(vertice.movimentacao, copia.valor_presente(data))
+        self.assertEqual(copia.fundo, vertice.fundo)
+
+    def test_cria_vertice_CPR(self):
+        copia = self.boleta_CPR
+        copia.id = None
+        copia.save()
+        data = copia.data_inicio
+
+        self.assertFalse(copia.relacao_vertice.exists())
+        copia.criar_vertice(data)
+        self.assertEqual(copia.relacao_vertice.count(), 1)
+
+        vertice = fm.Vertice.objects.get(object_id=copia.id, data=data)
+
+        self.assertEqual(copia.valor_presente(data), vertice.valor)
+        self.assertEqual(copia, vertice.content_object)
+        self.assertEqual(data, vertice.data)
+        self.assertEqual(copia.valor_presente(data), vertice.movimentacao)
+        self.assertEqual(copia.fundo, vertice.fundo)
+
+        data = copia.data_inicio + datetime.timedelta(days=1)
+
+        copia.criar_vertice(data)
+        self.assertEqual(copia.relacao_vertice.count(), 2)
+        vertice = fm.Vertice.objects.get(object_id=copia.id, data=data)
+
+        self.assertEqual(copia.valor_presente(data), vertice.valor)
+        self.assertEqual(copia, vertice.content_object)
+        self.assertEqual(data, vertice.data)
+        self.assertEqual(0, vertice.movimentacao)
+
+        data = copia.data_pagamento
+
+        copia.criar_vertice(data)
+        self.assertEqual(copia.relacao_vertice.count(), 3)
+        vertice = fm.Vertice.objects.get(object_id=copia.id, data=data)
+
+        self.assertEqual(0, vertice.valor)
+        self.assertEqual(copia, vertice.content_object)
+        self.assertEqual(data, vertice.data)
+        self.assertEqual(-copia.valor_presente(data), vertice.movimentacao)
+
+    def test_cria_vertice_emprestimo(self):
+        self.assertFalse(self.boleta_emprestimo.boleta_CPR.exists())
+        self.boleta_emprestimo.fechar_boleta(self.boleta_emprestimo.data_operacao)
+        self.assertTrue(self.boleta_emprestimo.boleta_CPR.exists())
+        boleta_cpr = self.boleta_emprestimo.boleta_CPR.first()
+
+        data = boleta_cpr.data_inicio
+        print(boleta_cpr.descricao)
+        self.assertEqual(boleta_cpr.valor_presente(data), 0)
+
+        self.assertFalse(boleta_cpr.relacao_vertice.exists())
+        boleta_cpr.criar_vertice(data)
+        self.assertEqual(boleta_cpr.relacao_vertice.count(), 1)
+
+        vertice = fm.Vertice.objects.get(object_id=boleta_cpr.id, data=data)
+
+        self.assertEqual(0, vertice.valor)
+        self.assertEqual(boleta_cpr, vertice.content_object)
+        self.assertEqual(data, vertice.data)
+        self.assertEqual(0, vertice.movimentacao)
+        self.assertEqual(boleta_cpr.fundo, vertice.fundo)
+
+        data = boleta_cpr.data_inicio + datetime.timedelta(days=1)
+        # Fechar boleta de emprestimo, que atualiza o valor da boleta de CPR.
+        self.boleta_emprestimo.fechar_boleta(data)
+
+        # checa se a boleta de empréstimo não criou nenhum CPR a mais.
+        self.assertEqual(self.boleta_emprestimo.boleta_CPR.count(), 1)
+        # busca a boleta de CPR de novo.
+        boleta_cpr = self.boleta_emprestimo.boleta_CPR.first()
+
+        # o vértice é criado com o valor atualizado.
+        boleta_cpr.criar_vertice(data)
+
+        # checa se de fato criou mais um vértice.
+        self.assertEqual(boleta_cpr.relacao_vertice.count(), 2)
+        # busca o vértice.
+        vertice = fm.Vertice.objects.get(object_id=boleta_cpr.id, data=data)
+
+        self.assertEqual(self.boleta_emprestimo.financeiro(data), vertice.valor)
+        self.assertEqual(boleta_cpr, vertice.content_object)
+        self.assertEqual(data, vertice.data)
+        self.assertEqual(0, vertice.movimentacao)
+
+        data = boleta_cpr.data_pagamento
+        # Fechar boleta de emprestimo, que atualiza o valor da boleta de CPR.
+        self.boleta_emprestimo.fechar_boleta(data)
+
+        # checa se a boleta de empréstimo não criou nenhum CPR a mais.
+        self.assertEqual(self.boleta_emprestimo.boleta_CPR.count(), 1)
+        # busca a boleta de CPR de novo.
+        boleta_cpr = self.boleta_emprestimo.boleta_CPR.first()
+
+
+        # o vértice é criado com o valor atualizado.
+        boleta_cpr.criar_vertice(data)
+
+        # checa se de fato criou mais um vértice.
+        self.assertEqual(boleta_cpr.relacao_vertice.count(), 3)
+        # busca o vértice.
+        vertice = fm.Vertice.objects.get(object_id=boleta_cpr.id, data=data)
+
+        self.assertEqual(0, vertice.valor)
+        self.assertEqual(boleta_cpr, vertice.content_object)
+        self.assertEqual(data, vertice.data)
+        print(boleta_cpr.__repr__())
+        self.assertEqual(0, vertice.movimentacao)

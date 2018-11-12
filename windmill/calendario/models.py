@@ -1,6 +1,8 @@
 import datetime
+from dateutil.relativedelta import relativedelta
 from datetime import timedelta
 import numpy as np
+import pandas as pd
 from django.db import models
 
 # Create your models here.
@@ -67,9 +69,12 @@ class Calendario(models.Model):
         Retorna a quantidade de dias úteis entre a data de início, inclusive,
         e a data de fim, exclusive.
         """
+        # Data_fim + 1 dia para que a contagem de dias úteis fique igual à do
+        # excel
+        data_final = data_fim + datetime.timedelta(days=1)
         feriados = list(self.feriados.filter(data__gte=data_inicio,
-            data__lte=data_fim).values_list('data', flat=True))
-        return np.busday_count(data_inicio, data_fim, holidays=feriados)
+            data__lte=data_final).values_list('data', flat=True))
+        return np.busday_count(data_inicio, data_final, holidays=feriados)
 
     def dia_trabalho(self, data_referencia, dias):
         """
@@ -97,3 +102,39 @@ class Calendario(models.Model):
         variável 'dias'.
         """
         return data_referencia + timedelta(days=dias)
+
+    def fim_mes_util(self, data_referencia):
+        """
+        Retorna o último dia útil do mês da data de referência
+        """
+        # Para somar um mês à data de referência
+        mes = relativedelta(months=+1)
+        # Para mudar o dia para o dia 1 do mês posterior
+        dia = relativedelta(day=1)
+        primeiro_dia_mes_posterior = data_referencia + mes + dia
+        # Anda um dia útil para trás para encontrar o último dia útil do mês
+        return self.dia_trabalho(primeiro_dia_mes_posterior, -1)
+
+
+    def fim_mes(self, data_referencia):
+        """
+        Retorna o último dia corrido do mês da data de referência
+        """
+        # Para somar um mês à data de referência
+        mes = relativedelta(months=+1)
+        # Para mudar o dia para o dia 1 do mês posterior
+        dia = relativedelta(day=1)
+        primeiro_dia_mes_posterior = data_referencia + mes + dia
+        return self.dia_corrido(primeiro_dia_mes_posterior, -1)
+
+    def conta_fim_mes(self, data_inicio, data_fim):
+        """
+        Retorna a quantidade de fim de meses que há entre as duas datas
+        """
+        count = 0
+        mes = relativedelta(months=+1)
+        fim_do_mes = self.fim_mes(data_inicio)
+        while (fim_do_mes <= data_fim):
+            count += 1
+            fim_do_mes += mes
+        return count

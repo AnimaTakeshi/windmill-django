@@ -13,9 +13,59 @@ from django.contrib.contenttypes.models import ContentType
 from phonenumber_field.modelfields import PhoneNumberField
 
 # Create your models here.
-class Fundo(models.Model):
+
+class BaseModelQuerySet(models.query.QuerySet):
+    def delete(self):
+        return super(BaseModelQuerySet, self).update(deletado_em=timezone.now())
+
+    def hard_delete(self):
+        return super(BaseModelQuerySet, self).delete()
+
+    def alive(self):
+        return self.filter(deletado_em=None)
+
+    def dead(self):
+        return self.exclude(deletado_em=None)
+
+class BaseModelManager(models.Manager):
+    def __init__(self, *args, **kwargs):
+        self.alive_only = kwargs.pop('alive_only', True)
+        super(BaseModelManager, self).__init__(*args, **kwargs)
+
+    def get_queryset(self):
+        if self.alive_only:
+            return BaseModelQuerySet(self.model).filter(deletado_em=None)
+        return BaseModelQuerySet(self.model)
+
+    def hard_delete(self):
+        return self.get_queryset().hard_delete()
+
+class BaseModel(models.Model):
+    """
+    Classe base para criar campos comuns a todas as classes, como 'criado em'
+    ou 'atualizado em'
+    """
+    deletado_em = models.DateTimeField(blank=True, null=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    objects = BaseModelManager()
+    all_objects = BaseModelManager(alive_only=False)
+
+    class Meta:
+        abstract = True
+
+    def delete(self):
+        self.deletado_em = timezone.now()
+        self.save()
+
+    def hard_delete(self):
+        super(BaseModel, self).delete()
+
+class Fundo(BaseModel):
     """
     Descreve informações relevantes para um fundo.
+
     """
     # Categorias do fundo.
     CATEGORIAS = (
@@ -37,6 +87,9 @@ class Fundo(models.Model):
         blank=True)
     # Instituição que distribui o fundo (capta investimentos no fundo)
     distribuidora = models.ForeignKey("Distribuidora", on_delete=models.PROTECT,
+        null=True, blank=True)
+    # Instituição que faz a custódia das cotas do fundo.
+    custodia = models.ForeignKey("Custodiante", on_delete=models.PROTECT,
         null=True, blank=True)
     # Tipo de fundo - Ações, Renda Fixa, Imobiliário, etc... Importante
     # para determinação da metodologia de cálculo do IR.
@@ -70,6 +123,8 @@ class Fundo(models.Model):
     # Caixa padrão é o caixa em que o fundo recebe aportes. Quando há
     # movimentação de caixa sem caixa especificado, o caixa padrão é usado
     caixa_padrao = models.ForeignKey('ativos.Caixa', on_delete=models.PROTECT)
+    # Indica qual calendário o fundo segue.
+    calendario = models.ForeignKey('calendario.Calendario', on_delete=models.PROTECT)
 
     class Meta:
         ordering = ['nome']
@@ -77,6 +132,54 @@ class Fundo(models.Model):
 
     def __str__(self):
         return '%s' % (self.nome)
+
+    def fechar_fundo(self, data_referencia):
+        """
+        FECHAMENTO DE FUNDO
+        Para fazer o fechamento de um fundo em uma determinada data de referência, é
+        preciso:
+            - Fechar todas as boletas do fundo que ainda não foram fechadas.
+            - Reunir todos os vértices referentes ao fundo na data de referencia.
+            - Verificar, no app Mercado, se há algum provento cuja ex-date seja na
+        data de referência. Se houver o ativo na carteira, deve processar o provento
+        de forma apropriada:
+            - Dividendo/JSCP:
+                - Cria uma movimentação no ativo na data_ex
+                - Criar um CPR com data de início na data ex e data de pagamento
+                igual à data de pagamento do provento.
+                - Cria uma provisão com data de pagamento igual à data de pagamento
+                do provento, e valor financeiro igual ao valor bruto por ação *
+                quantidade de ações na data.
+            - Bonificação em ações:
+                - Cria uma quantidade do ativo na data de pagamento do provento
+                igual a (valor bruto - 1) * quantidade na data ex do provento.
+            - Direitos de subscrição:
+                - Cria uma quantidade do ativo representante do direito de
+                subscrição na data ex do provento.
+                - No momento em que a subscrição for paga, cria a movimentação de
+                entrada do ativo e boleta de provisão para a saída de caixa para
+                pagamento.
+            - Reunir todas as quantidades referentes ao fundo, com data igual ou
+        anterior à data de referência. Quantidades são cumulativas. Consolidar
+        e descartar aqueles que ficarem zerados (seria possível verificar
+        através da comparação das quantidades que estava presentes no vértice do
+        dia anterior.)
+            - Reunir todas as movimentações referentes ao fundo, com data igual
+        à data de referência. Movimentações são pontuais.
+            - Reunir todas as boletas de CPR com data de início inferior à data de
+        referência e data de pagamento superior à data de referência. Se boletas de
+        CPR criarem movimentações e quantidades, não haverá necessidade de reunir
+        as boletas, pois seus efeitos já seriam sentidos pelas quantidades e
+        movimentações.
+        """
+        pass
+
+    def fechar_boletas_do_fundo(self, data_referencia):
+        """
+        Reúne todas as boletas relevantes para a data de referência e faz seu
+        fechamento.
+        """
+        pass
 
 class Administradora(models.Model):
     """
@@ -233,7 +336,7 @@ class Contato(models.Model):
     def __str__(self):
         return '%s' % (self.nome)
 
-class Carteira(models.Model):
+class Carteira(BaseModel):
     """
     Descreve a carteira de um fundo ao final do dia numa determinada data.
     """
@@ -246,7 +349,7 @@ class Carteira(models.Model):
         ordering = ['fundo']
         verbose_name_plural = 'Carteira'
 
-class Vertice(models.Model):
+class Vertice(BaseModel):
     """
     Um vertice descreve uma relacao entre carteira e ativo, indicando o quanto
     do ativo a carteira possui, e o quanto do ativo foi movimentado no dia.
@@ -254,17 +357,33 @@ class Vertice(models.Model):
     estrangeira para que a busca no banco de dados seja mais rápida. Uma
     outra tabela guarda a relação entre os modelos para que seja possível
     explodir um vértice entre várias quantidades/movimentações feitas.
+
+    Criação de vértices em relação ao CPR:
+        - CPR: Vértices de CPR possuem uma quantidade igual ao valor financeiro
+    da boleta de CPR. Na data de pagamento, sua quantidade deve zerar. Deve
+    haver uma movimentação de entrada e de saída do CPR, na data de início e na
+    data de pagamento.
+        - Empréstimo: Possui apenas quantidade. A movimentação ocorre no ativo
+    e no caixa do fundo.
+        - Acúmulo: Acúmulo são CPRs de despesas projetadas para serem cobradas
+    no futuro. Não possuem movimentação de entrada, apenas de saída, quando a
+    boleta é paga.
+        - Diferimento: Quando uma despesa inesperada é paga, o diferimento serve
+    para atenuar o efeito do pagamento da despesa ao longo do tempo. Possui uma
+    movimentação de entrada.
     """
     fundo = models.ForeignKey('Fundo', on_delete=models.PROTECT)
-    ativo = models.ForeignKey('ativos.Ativo', on_delete=models.PROTECT)
     custodia = models.ForeignKey('Custodiante', on_delete=models.PROTECT)
+    # Quantidade do ativo.
     quantidade = models.DecimalField(decimal_places=6, max_digits=20)
-    valor = models.DecimalField(decimal_places=6, max_digits=20)
+    # Valor financeiro do ativo.
+    valor = models.DecimalField(decimal_places=2, max_digits=20)
+    # Preço do ativo.
     preco = models.DecimalField(decimal_places=6, max_digits=20)
-    movimentacao = models.DecimalField(decimal_places=6, max_digits=20)
+    movimentacao = models.DecimalField(decimal_places=6, max_digits=20, default=decimal.Decimal(0))
     data = models.DateField()
 
-    # O content_type pode ser tanto um ativo quanto um CPR
+    # O content_type pode ser tanto um ativo quanto uma boleta de CPR
     content_type = models.ForeignKey(ContentType, on_delete=models.PROTECT,
         related_name='relacao_ativo')
     object_id = models.PositiveIntegerField()
@@ -274,7 +393,7 @@ class Vertice(models.Model):
         ordering = ['fundo']
         verbose_name_plural = 'Vértices'
 
-class Quantidade(models.Model):
+class Quantidade(BaseModel):
     """
     Uma quantidade de um ativo ou CPR é gerada quando o ativo é operado.
     """
@@ -299,7 +418,7 @@ class Quantidade(models.Model):
     def __str__(self):
         return '%s' % (self.content_object.__str__())
 
-class Movimentacao(models.Model):
+class Movimentacao(BaseModel):
     """
     Uma movimentação representa a movimentação financeira de algo, ações,
     caixa, CPR, etc.
@@ -325,7 +444,7 @@ class Movimentacao(models.Model):
     def __str__(self):
         return '%s' % (self.content_object.__str__())
 
-class CasamentoVerticeQuantidade(models.Model):
+class CasamentoVerticeQuantidade(BaseModel):
     """
     Relaciona o ID dos Vértices e das Quantidades, para que seja possível
     explodir um vértice entre todas as quantidades/operações feitas.
@@ -333,7 +452,7 @@ class CasamentoVerticeQuantidade(models.Model):
     vertice = models.ForeignKey('Vertice', on_delete=models.PROTECT)
     quantidade = models.ForeignKey('Quantidade', on_delete=models.PROTECT)
 
-class CasamentoVerticeMovimentacao(models.Model):
+class CasamentoVerticeMovimentacao(BaseModel):
     """
     Relaciona o ID de Vértices e Movimentações, para que seja possível
     explodir um vértice entre todas as movimentações/operações feitas.
@@ -341,7 +460,7 @@ class CasamentoVerticeMovimentacao(models.Model):
     vertice = models.ForeignKey('Vertice', on_delete=models.PROTECT)
     movimentacao = models.ForeignKey('Movimentacao', on_delete=models.PROTECT)
 
-class Cotista(models.Model):
+class Cotista(BaseModel):
     """
     Armazena informações de cotistas dos fundos. Eles podem ser outros
     fundos ou pessoas.
@@ -359,7 +478,7 @@ class Cotista(models.Model):
         null=True, blank=True, unique=True)
 
 
-class CertificadoPassivo(models.Model):
+class CertificadoPassivo(BaseModel):
     """
     A cada movimentação de passivo de fundo feita, um certificado passivo é
     criado para registrar quantas cotas, valor financeiro, IR calculado,
@@ -382,7 +501,7 @@ class CPR(models.Model):
     """
     Armazena informações sobre CPR do fundo.
     """
-    descricao = models.CharField(max_length=20)
+    nome = models.CharField(max_length=50)
     valor = models.DecimalField(max_digits=20, decimal_places=6)
     data = models.DateField()
     fundo = models.ForeignKey('fundo.Fundo', on_delete=models.PROTECT)

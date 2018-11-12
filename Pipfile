@@ -20,6 +20,7 @@ django-phonenumber-field = "*"
 openpyxl = "==2.4.9"
 pytest-django = "*"
 model-mommy = "*"
+python-dateutil = "*"
 
 [dev-packages]
 coverage = "*"

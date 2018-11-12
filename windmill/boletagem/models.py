@@ -60,8 +60,55 @@ import fundo.models as fm
 import mercado.models as mm
 
 # Create your models here.
+class BaseModelQuerySet(models.query.QuerySet):
+    def delete(self):
+        return super(BaseModelQuerySet, self).update(deletado_em=timezone.now())
 
-class BoletaAcao(models.Model):
+    def hard_delete(self):
+        return super(BaseModelQuerySet, self).delete()
+
+    def alive(self):
+        return self.filter(deletado_em=None)
+
+    def dead(self):
+        return self.exclude(deletado_em=None)
+
+class BaseModelManager(models.Manager):
+    def __init__(self, *args, **kwargs):
+        self.alive_only = kwargs.pop('alive_only', True)
+        super(BaseModelManager, self).__init__(*args, **kwargs)
+
+    def get_queryset(self):
+        if self.alive_only:
+            return BaseModelQuerySet(self.model).filter(deletado_em=None)
+        return BaseModelQuerySet(self.model)
+
+    def hard_delete(self):
+        return self.get_queryset().hard_delete()
+
+class BaseModel(models.Model):
+    """
+    Classe base para criar campos comuns a todas as classes, como 'criado em'
+    ou 'atualizado em'
+    """
+    deletado_em = models.DateTimeField(blank=True, null=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    objects = BaseModelManager()
+    all_objects = BaseModelManager(alive_only=False)
+
+    class Meta:
+        abstract = True
+
+    def delete(self):
+        self.deletado_em = timezone.now()
+        self.save()
+
+    def hard_delete(self):
+        super(BaseModel, self).delete()
+
+class BoletaAcao(BaseModel):
     """
     Representa a boleta de um trade de ações. A boleta de ações deve ter todas
     as informações necessárias para a geração das boletas e quantidades
@@ -251,7 +298,7 @@ class BoletaAcao(models.Model):
             acao_movimentacao.full_clean()
             acao_movimentacao.save()
 
-class BoletaRendaFixaLocal(models.Model):
+class BoletaRendaFixaLocal(BaseModel):
     """
     Representa uma boleta de renda fixa local. Processada da mesma maneira que
     a boleta de ação
@@ -265,6 +312,7 @@ class BoletaRendaFixaLocal(models.Model):
     data_operacao = models.DateField(default=datetime.date.today, null=False)
     data_liquidacao = models.DateField(null=True, blank=True)
     corretora = models.ForeignKey('fundo.Corretora', null=False, on_delete=models.PROTECT)
+    custodia = models.ForeignKey('fundo.Custodiante', on_delete=models.PROTECT)
     fundo = models.ForeignKey('fundo.Fundo', null=False, on_delete=models.PROTECT)
     operacao = models.CharField('Compra/Venda', max_length=1, choices=OPERACAO)
     quantidade = models.DecimalField(max_digits=10, decimal_places=2)
@@ -419,7 +467,7 @@ class BoletaRendaFixaLocal(models.Model):
             )
             acao_movimentacao.save()
 
-class BoletaRendaFixaOffshore(models.Model):
+class BoletaRendaFixaOffshore(BaseModel):
     """
     Representa uma operação de renda fixa offshore. Processado da mesma maneira
     que a boleta de ação.
@@ -432,6 +480,7 @@ class BoletaRendaFixaOffshore(models.Model):
     data_operacao = models.DateField(default=datetime.date.today, null=False)
     data_liquidacao = models.DateField(default=datetime.date.today, null=False)
     corretora = models.ForeignKey('fundo.Corretora', null=False, on_delete=models.PROTECT)
+    custodia = models.ForeignKey('fundo.Custodiante', on_delete=models.PROTECT)
     corretagem = models.DecimalField(max_digits=8, decimal_places=2)
     fundo = models.ForeignKey('fundo.Fundo', null=False, on_delete=models.PROTECT)
     operacao = models.CharField('Compra/Venda', max_length=1, choices=OPERACAO)
@@ -578,7 +627,7 @@ class BoletaRendaFixaOffshore(models.Model):
             )
             boleta_provisao.save()
 
-class BoletaFundoLocal(models.Model):
+class BoletaFundoLocal(BaseModel):
     """
     Representa uma operação de cotas de fundo local. Processado da mesma maneira
     que a boleta de ação.
@@ -610,6 +659,7 @@ class BoletaFundoLocal(models.Model):
     quantidade = models.DecimalField(max_digits=15, decimal_places=6, blank=True, null=True)
     preco = models.DecimalField(max_digits=15, decimal_places=6, blank=True, null=True)
     caixa_alvo = models.ForeignKey('ativos.Caixa', null=False, on_delete=models.PROTECT)
+    custodia = models.ForeignKey('fundo.Custodiante', on_delete=models.PROTECT)
 
     boleta_provisao = GenericRelation('BoletaProvisao', related_query_name='provisao')
     boleta_CPR = GenericRelation('BoletaCPR', related_query_name='CPR')
@@ -851,7 +901,7 @@ class BoletaFundoLocal(models.Model):
             passivo.full_clean()
             passivo.save()
 
-class BoletaFundoOffshore(models.Model):
+class BoletaFundoOffshore(BaseModel):
     """
     Representa uma operação de cotas de fundo offshore. Processado de acordo
     com o seu estado atual.
@@ -890,6 +940,7 @@ class BoletaFundoOffshore(models.Model):
     quantidade = models.DecimalField(max_digits=15, decimal_places=6, blank=True, null=True)
     operacao = models.CharField(max_length=13, choices=OPERACAO)
     caixa_alvo = models.ForeignKey('ativos.Caixa', on_delete=models.PROTECT)
+    custodia = models.ForeignKey('fundo.Custodiante', on_delete=models.PROTECT)
 
     boleta_provisao = GenericRelation('BoletaProvisao', related_query_name='provisao')
     boleta_CPR = GenericRelation('BoletaCPR', related_query_name='CPR')
@@ -1335,10 +1386,14 @@ class BoletaFundoOffshore(models.Model):
             passivo.full_clean()
             passivo.save()
 
-
-class BoletaEmprestimo(models.Model):
+class BoletaEmprestimo(BaseModel):
     """
     Representa uma operação de empréstimo de ações locais.
+    CPR: Ao fazer o fechamento de uma boleta de empréstimo, caso não haja boleta
+    de CPR, cria a boleta de CPR, com data de pagamento igual à data de vencimento.
+    A cada dia, a boleta de CPR é atualizada com o novo valor financeiro do
+    contrato. Caso o contrato seja liquidado antecipadamente, a boleta de CPR
+    também deve ser atualizada. A atualização ocorre no fechamento da boleta.
     """
     # TODO: PARTE DE CPR.
     OPERACAO = (
@@ -1350,6 +1405,7 @@ class BoletaEmprestimo(models.Model):
     data_operacao = models.DateField(default=datetime.date.today)
     fundo = models.ForeignKey('fundo.Fundo', on_delete=models.PROTECT)
     corretora = models.ForeignKey('fundo.Corretora', on_delete=models.PROTECT)
+    custodia = models.ForeignKey('fundo.Custodiante', on_delete=models.PROTECT)
     data_vencimento = models.DateField()
     data_liquidacao = models.DateField(null=True, blank=True)
     reversivel = models.BooleanField()
@@ -1359,7 +1415,7 @@ class BoletaEmprestimo(models.Model):
     quantidade = models.DecimalField(max_digits=15, decimal_places=6)
     taxa = models.DecimalField(max_digits=8, decimal_places=6)
     preco = models.DecimalField(max_digits=10, decimal_places=6)
-    boleta_original = models.ForeignKey('self', on_delete=models.PROTECT, null=True, blank=True)
+    boleta_original = models.ForeignKey('BoletaEmprestimo', on_delete=models.PROTECT, null=True, blank=True)
     caixa_alvo = models.ForeignKey('ativos.Caixa', on_delete=models.PROTECT)
     calendario = models.ForeignKey('calendario.Calendario',
         on_delete=models.PROTECT)
@@ -1519,7 +1575,7 @@ class BoletaEmprestimo(models.Model):
             data_referencia = self.calendario.dia_trabalho(datetime.date.today(), -1)
         # Se houver data de reversão, data de liquidação deve ser maior ou
         # igual à data de reversão
-        if self.reversivel == True and self.data_reversao is not None:
+        if self.reversivel == True and self.data_reversao is not None and data_referencia <= self.data_vencimento:
             # Data de liquidação deve ser maior que data de reversão
             if data_referencia >= self.data_reversao:
                 if quantidade > 0:
@@ -1551,7 +1607,8 @@ class BoletaEmprestimo(models.Model):
                             taxa=round(self.taxa,6),
                             boleta_original=self.boleta_original,
                             caixa_alvo=self.caixa_alvo,
-                            calendario=self.calendario)
+                            calendario=self.calendario,
+                            custodia=self.custodia)
                         nova_boleta.full_clean()
                         nova_boleta.save()
                         nova_boleta.liquidar_boleta(quantidade, data_referencia)
@@ -1570,6 +1627,7 @@ class BoletaEmprestimo(models.Model):
             else:
                 raise ValueError("A data de liquidação deve ser maior que a de reversão.")
         # Caso a boleta não seja reversível, o contrato deve ser carregado até o fim do termo.
+        # No caso da liquidação em data de liquidação,
         elif data_referencia == self.data_liquidacao:
             pass
         elif self.data_reversao is None:
@@ -1578,11 +1636,30 @@ class BoletaEmprestimo(models.Model):
         else:
             raise ValueError('O contrato não é reversível, só é possível liquidá-lo no vencimento.')
 
-    def fechar_boleta(self):
+    def fechar_boleta(self, data_referencia):
         """
-        O fechamento de uma boleta de empréstimo acumula o CPR de aluguel.
-        Cria apenas uma quantidade de CPR.
+        O fechamento da boleta deve ocorrer da seguinte maneira:
+        DATA DA OPERAÇÃO:
+            - Cria a boleta de CPR, com valor financeiro zero.
+        DATAS ENTRE OPERAÇÃO E LIQUIDAÇÃO:
+            - Atualiza a boleta de CPR com os juros acumulados no período.
+        DATA DE LIQUIDAÇÃO:
+            - Atualiza a data de pagamento da boleta para a data de liquidação.
+            - Data de pagamento da boleta de CPR é atualizada
         """
+        if data_referencia == self.data_operacao:
+            self.criar_boleta_CPR()
+        elif data_referencia > self.data_operacao and \
+            (self.data_liquidacao == None or data_referencia < self.data_liquidacao):
+            tipo = ContentType.objects.get_for_model(self)
+            cpr = self.boleta_CPR.get(object_id=self.id, content_type__pk=tipo.id)
+            cpr.valor_cheio = self.financeiro(data_referencia=data_referencia)
+            cpr.save()
+        elif data_referencia == self.data_liquidacao:
+            cpr = self.boleta_CPR.all().first()
+            cpr.valor_cheio = self.financeiro(data_referencia=data_referencia)
+            cpr.data_pagamento = self.data_liquidacao
+            cpr.save()
 
     def criar_boleta_provisao(self):
         """
@@ -1610,23 +1687,20 @@ class BoletaEmprestimo(models.Model):
         """
         Cria uma boleta de CPR de acordo com os parâmeteros da boleta
         de ação. Se já houver uma boleta de CPR criada, não há necessidade
-        de criar outra.
+        de criar outra. O valor_cheio é atualizado no fechamento da boleta.
         """
         # Checar se há boleta de CPR já criada:
         if self.boleta_CPR.all().exists() == False:
             # Criar boleta de CPR
-            op = ''
-            if self.operacao == "C":
-                op = 'Compra '
-            else:
-                op = 'Venda '
             boleta_CPR = BoletaCPR(
-                descricao = op + self.ativo.nome,
-                valor_cheio = -(self.preco * self.quantidade),
+                descricao = 'Aluguel ' + self.ativo.nome,
+                valor_cheio = 0,
                 data_inicio = self.data_operacao,
-                data_pagamento = self.data_liquidacao,
+                data_pagamento = self.data_vencimento,
                 fundo = self.fundo,
-                content_object = self
+                content_object = self,
+                tipo = BoletaCPR.TIPO[3][0],
+                capitalizacao = BoletaCPR.CAPITALIZACAO[2][0]
             )
             boleta_CPR.save()
 
@@ -1657,7 +1731,7 @@ class BoletaEmprestimo(models.Model):
             else:
                 raise TypeError("A data de liquidação deve estar preenchida para criar a movimentação.")
 
-class BoletaCambio(models.Model):
+class BoletaCambio(BaseModel):
     """
     Representa uma operação de câmbio entre caixas. Ele também pode ser
     usado para transferência de caixas da mesma moeda
@@ -1670,6 +1744,7 @@ class BoletaCambio(models.Model):
     # Pelo caixa final, determinamos qual é a moeda final
     caixa_destino = models.ForeignKey('ativos.Caixa', on_delete=models.PROTECT,
         related_name='related_caixa_final')
+    data_operacao = models.DateField(default=datetime.date.today)
     # taxa pelo qual o cambio foi feito:
     # caixa_final = caixa_origem * cambio
     cambio = models.DecimalField(max_digits=10, decimal_places=6)
@@ -1689,7 +1764,71 @@ class BoletaCambio(models.Model):
     relacao_quantidade = GenericRelation(Quantidade, related_query_name='qtd_cambio')
     relacao_movimentacao = GenericRelation(Movimentacao, related_query_name='mov_cambio')
 
-class BoletaProvisao(models.Model):
+    def criar_boleta_CPR_origem(self):
+        """
+        Cria um CPR equivalente à moeda origem
+        """
+        if self.boleta_CPR.filter(descricao__contains='Caixa origem').exists() == False:
+            cpr = BoletaCPR(
+                descricao='Câmbio: Caixa origem: - ' + self.caixa_origem.nome,
+                fundo=self.fundo,
+                valor_cheio=-abs(self.financeiro_origem),
+                data_inicio=self.data_operacao,
+                data_pagamento=self.data_liquidacao_origem,
+                content_object=self
+            )
+            cpr.full_clean()
+            cpr.save()
+
+    def criar_boleta_CPR_destino(self):
+        """
+        Cria um CPR equivalente à moeda de destino
+        """
+        if self.boleta_CPR.filter(descricao__contains='Caixa destino').exists() == False:
+            cpr = BoletaCPR(
+                descricao='Câmbio: Caixa destino - ' + self.caixa_destino.nome,
+                fundo=self.fundo,
+                valor_cheio=abs(self.financeiro_final),
+                data_inicio=self.data_operacao,
+                data_pagamento=self.data_liquidacao_destino,
+                content_object=self
+            )
+            cpr.full_clean()
+            cpr.save()
+
+    def criar_boleta_provisao_origem(self):
+        """
+        Cria a boleta de provisão para o caixa origem.
+        """
+        if self.boleta_provisao.filter(descricao__contains='Caixa origem').exists() == False:
+            provisao = BoletaProvisao(
+                descricao='Câmbio: Caixa origem - ' + self.caixa_origem.nome,
+                fundo=self.fundo,
+                data_pagamento=self.data_liquidacao_origem,
+                financeiro=-abs(self.financeiro_origem),
+                caixa_alvo=self.caixa_origem,
+                content_object=self
+            )
+            provisao.full_clean()
+            provisao.save()
+
+    def criar_boleta_provisao_destino(self):
+        """
+        Cria a boleta de provisão para o caixa destino.
+        """
+        if self.boleta_provisao.filter(descricao__contains='Caixa destino').exists() == False:
+            provisao = BoletaProvisao(
+                descricao="Câmbio: Caixa destino - " + self.caixa_destino.nome,
+                fundo=self.fundo,
+                data_pagamento=self.data_liquidacao_destino,
+                financeiro=abs(self.financeiro_final),
+                caixa_alvo=self.caixa_destino,
+                content_object=self
+            )
+            provisao.full_clean()
+            provisao.save()
+
+class BoletaProvisao(BaseModel):
     """
     Boleta para registrar despesas a serem pagas por um fundo
     """
@@ -1703,11 +1842,11 @@ class BoletaProvisao(models.Model):
     caixa_alvo = models.ForeignKey('ativos.Caixa', on_delete=models.PROTECT)
     fundo = models.ForeignKey('fundo.Fundo', on_delete=models.PROTECT)
     data_pagamento = models.DateField()
-    financeiro = models.DecimalField(max_digits=20, decimal_places=2)
+    financeiro = models.DecimalField(max_digits=16, decimal_places=2)
     estado = models.CharField(max_length=9, choices=ESTADO, default=ESTADO[0][0])
 
-    relacao_quantidade = GenericRelation(Quantidade, related_query_name='qtd_provisao')
-    relacao_movimentacao = GenericRelation(Movimentacao, related_query_name='mov_provisao')
+    relacao_quantidade = GenericRelation('fundo.Quantidade', related_query_name='qtd_provisao')
+    relacao_movimentacao = GenericRelation('fundo.Movimentacao', related_query_name='mov_provisao')
 
     # Content type para servir de ForeignKey de qualquer boleta a ser
     # inserida no sistema.
@@ -1718,23 +1857,95 @@ class BoletaProvisao(models.Model):
     class Meta:
         verbose_name_plural = "Boletas de provisão"
 
-class BoletaCPR(models.Model):
+    def fechar_boleta(self):
+        """
+        Executa as funções para o fechamento da boleta.
+        Podemos verificar se a boleta está fechada pela existência de quantidade
+        e movimentação relacionada.
+        """
+        self.criar_movimentacao()
+        self.criar_quantidade()
+        self.estado = self.ESTADO[1][0]
+
+    def criar_movimentacao(self):
+        """
+        Cria a movimentação do caixa
+        """
+        if self.relacao_movimentacao.exists() == False:
+            mov = fm.Movimentacao(
+                valor=self.financeiro,
+                fundo=self.fundo,
+                data=self.data_pagamento,
+                objeto_movimentacao=self.caixa_alvo,
+                content_object=self
+            )
+            self.estado = self.ESTADO[1][0]
+            self.save()
+            mov.full_clean()
+            mov.save()
+
+    def criar_quantidade(self):
+        """
+        Cria a quantidade do caixa.
+        """
+        if self.relacao_quantidade.exists() == False:
+            qtd = fm.Quantidade(
+                qtd=self.financeiro,
+                fundo=self.fundo,
+                data=self.data_pagamento,
+                objeto_quantidade=self.caixa_alvo,
+                content_object=self
+            )
+            self.estado = self.ESTADO[1][0]
+            self.save()
+            qtd.full_clean()
+            qtd.save()
+
+class BoletaCPR(BaseModel):
     """
     Boleta para registrar CPR dos fundos.
+    Acúmulo:
+        Uma boleta de acúmulo de CPR serve incluir de forma gradual o efeito
+        do pagamento de uma despesa ou recebimento de uma conta prevista para
+        ser paga ou recebida pelo fundo.
+    Diferimento:
+        A boleta de diferimento tem uma função similar, mas de sentido diferente:
+        enquanto que na boleta de acúmulo de CPR, o valor aumenta, de forma
+        absoluta, gradualmente, até o valor estimado da despesa, enquanto que,
+        no diferimento, há uma movimentação de caixa não prevista.
+    CPR: Marca contrapartida de operações de ativos.
+    Empréstimo: Marca o CPR de contratos de empréstimo de ativos.
+
+        O fechamento de uma boleta de CPR cria, dependendo de seu tipo,
+    quantidades e movimentações:
+        - Acúmulo: Cria, diariamente, quantidades com seu valor, e na data de
+    pagamento da boleta, a movimentação de saída do CPR.
+        - Diferimento: Cria, na sua data de início, uma movimentação de entrada
+    do CPR, com valor igual ao seu valor cheio e, diariamente, uma quantidade
+    com seu valor.
+        - CPR: Cria movimentações de entrada e saída na sua data de início e
+    pagamento, respectivamente.
+        - Empréstimo: Cria quantidades diariamente, igual ao valor do contrato
+    no dia. Não cria nenhum tipo de movimentação.
     """
 
     # Tipo de CPR:
     # Diarização - o valor do CPR acumula de acordo com a capitalização
     # Diferimento - o valor é descontado pelo seu valor parcial
     # CPR - Não tem nenhum tipo de acúmulo ou desconto
+    # Empréstimo - Apenas representa a quantidade e aluguel acumulada, não
+    # deve criar nenhuma quantidade ou movimentação. A boleta de empréstimo é
+    # atualizada diariamente, até o dia de sua liquidação.
     TIPO = (
-        ("Diarização", "Diarização"),
+        ("Acúmulo", "Acúmulo"),
         ('Diferimento', 'Diferimento'),
-        ("CPR", "CPR")
+        ("CPR", "CPR"),
+        ("Empréstimo", "Empréstimo")
     )
 
     # Capitalização - A diarização/diferimento afeta o valor do CPR na
-    # periodicidade da capitalização.
+    # periodicidade da capitalização. Capitalização mensal ocorre no último dia
+    # útil do mês.
     CAPITALIZACAO = (
         ("Diária", "Diária"),
         ("Mensal", "Mensal"),
@@ -1758,15 +1969,14 @@ class BoletaCPR(models.Model):
     # Data de fim da capitalização do CPR.
     data_vigencia_fim = models.DateField(null=True, blank=True)
     # Data em que o CPR deve sair da carteira.
-    data_pagamento = models.DateField(null=True, blank=True)
+    data_pagamento = models.DateField(null=True, blank=True, default=datetime.date.max)
     # Tipo de CPR
     tipo = models.CharField(max_length=12, choices=TIPO, default=TIPO[2][0])
     # Capitalização indica o período com que o CPR acumula
     capitalizacao = models.CharField(max_length=7, choices=CAPITALIZACAO,
         default=CAPITALIZACAO[2][0])
 
-    relacao_quantidade = GenericRelation(Quantidade, related_query_name='qtd_cpr')
-    relacao_movimentacao = GenericRelation(Movimentacao, related_query_name='mov_cpr')
+    relacao_vertice = GenericRelation('fundo.Vertice', related_query_name='cpr')
 
     # Content type para servir de ForeignKey de qualquer boleta de operação
     # a ser inserida no sistema.
@@ -1780,7 +1990,225 @@ class BoletaCPR(models.Model):
     def __str__(self):
         return '%s' % (self.descricao)
 
-class BoletaPassivo(models.Model):
+    def __repr__(self):
+        return """
+        BoletaCPR= <
+            descricao={0},
+            fundo={1},
+            valor_cheio={2},
+            valor_parcial={3},
+            data_inicio={4},
+            data_vigencia_inicio={5},
+            data_vigencia_fim={6},
+            data_pagamento={7},
+            tipo={8},
+            capitalizacao={9},
+        >
+        """.format(self.descricao, self.fundo, self.valor_cheio,
+            self.valor_parcial, self.data_inicio, self.data_vigencia_inicio,
+            self.data_vigencia_fim, self.data_pagamento, self.tipo,
+            self.capitalizacao)
+
+    def valor_presente(self, data_referencia):
+        """
+        Calcula o valor presente de uma boleta de CPR, dependendo de seu
+        tipo, data de vigência e data de início e pagamento. No caso de
+        CPR e Empréstimo, seu valor cheio é o seu valor presente, sempre
+        """
+        if self.tipo == self.TIPO[2][0] or self.tipo == self.TIPO[3][0]:
+            return self.valor_cheio
+
+        if self.valor_cheio == None and self.valor_parcial != None:
+            self.valor_cheio = self.calcula_valor_cheio()
+            self.save()
+        elif self.valor_parcial == None and self.valor_cheio != None:
+            self.valor_parcial = self.calcula_valor_parcial()
+            self.save()
+        # Tipo Acúmulo
+        if self.tipo == self.TIPO[0][0]:
+            # DIÁRIO
+            if self.capitalizacao == self.CAPITALIZACAO[0][0]:
+                if data_referencia > self.data_vigencia_fim:
+                    resultado = (self.fundo.calendario.dia_trabalho_total(self.data_vigencia_inicio, self.data_vigencia_fim))*self.valor_parcial
+                    return resultado.quantize(decimal.Decimal('1.00'))
+                elif data_referencia < self.data_vigencia_inicio:
+                    return 0
+                else:
+                    resultado = (self.fundo.calendario.dia_trabalho_total(self.data_vigencia_inicio, data_referencia))*self.valor_parcial
+                    return resultado.quantize(decimal.Decimal('1.00'))
+            # Mensal
+            elif self.capitalizacao == self.CAPITALIZACAO[1][0]:
+                # Dentro da vigência
+                if data_referencia >= self.data_vigencia_inicio and data_referencia <= self.data_vigencia_fim:
+                    n_capitalizacoes = self.fundo.calendario.conta_fim_mes(self.data_vigencia_inicio, data_referencia)
+                    print("N: " + str(n_capitalizacoes))
+                    print("Iníco da vigência: " + str(self.data_vigencia_inicio))
+                    print("Data de referência: " + str(data_referencia))
+                    return n_capitalizacoes*self.valor_parcial
+                elif data_referencia > self.data_vigencia_fim and data_referencia <= self.data_pagamento:
+                    return self.fundo.calendario.conta_fim_mes(self.data_vigencia_inicio, self.data_vigencia_fim)*self.valor_parcial
+        # Tipo Diferimento
+        elif self.tipo == self.TIPO[1][0]:
+            if self.capitalizacao == self.CAPITALIZACAO[0][0]:
+                if data_referencia < self.data_vigencia_inicio:
+                    return self.valor_cheio
+                elif data_referencia > self.data_vigencia_fim:
+                    return 0
+                else:
+                    return self.valor_cheio - self.valor_parcial*(self.fundo.calendario.dia_trabalho_total(self.data_vigencia_inicio, data_referencia)-1)
+            elif self.capitalizacao == self.CAPITALIZACAO[1][0]:
+                if self.data_vigencia_inicio <= data_referencia <= self.data_vigencia_fim:
+                    return self.valor_cheio - self.valor_parcial*self.fundo.calendaio.conta_fim_mes(self.data_vigencia_inicio, data_referencia)
+
+    def calcula_valor_cheio(self):
+        """
+        Calcula o valor cheio de uma boleta baseado no valor parcial
+        """
+        if self.capitalizacao == self.CAPITALIZACAO[0][0]:
+            cheio = self.valor_parcial * self.fundo.calendario.dia_trabalho_total(self.data_vigencia_inicio, self.data_vigencia_fim)
+        elif self.capitalizacao == self.CAPITALIZACAO[1][0]:
+            cheio = self.valor_parcial * self.fundo.calendario.conta_fim_mes(self.data_vigencia_inicio, self.data_vigencia_fim)
+        return cheio
+
+    def calcula_valor_parcial(self):
+        """
+        Calcula o valor parcial a partir do valor cheio
+        """
+        if self.capitalizacao == self.CAPITALIZACAO[0][0]:
+            parcial = self.valor_cheio/self.fundo.calendario.dia_trabalho_total(self.data_vigencia_inicio, self.data_vigencia_fim)
+        elif self.capitalizacao == self.CAPITALIZACAO[1][0]:
+            parcial = self.valor_cheio/self.fundo.calendario.conta_fim_mes(self.data_vigencia_inicio, self.data_vigencia_fim)
+        return parcial
+
+    def criar_vertice(self, data_referencia):
+        """
+        Cria um vértice
+        """
+        if self.tipo == self.TIPO[0][0]:
+            self.criar_vertice_acumulo(data_referencia)
+        elif self.tipo == self.TIPO[1][0]:
+            self.criar_vertice_diferimento(data_referencia)
+        elif self.tipo == self.TIPO[2][0]:
+            self.criar_vertice_CPR(data_referencia)
+        elif self.tipo == self.TIPO[3][0]:
+            self.criar_vertice_emprestimo(data_referencia)
+
+    def criar_vertice_acumulo(self, data_referencia):
+        """
+        Cria um vértice
+        """
+        if self.relacao_vertice.filter(data=data_referencia).exists() == False:
+            mov = 0
+            if data_referencia == self.data_pagamento:
+                # Na data de pagamento, o acúmulo deve ter uma movimentação contrária ao
+                # seu valor presente para representar sua saída.
+                mov = -self.valor_presente(data_referencia)
+
+            vertice = fm.Vertice(
+                fundo=self.fundo,
+                custodia=self.encontrar_custodiante(),
+                quantidade=1,
+                valor=self.valor_presente(data_referencia),
+                preco=1,
+                movimentacao=mov,
+                data=data_referencia,
+                content_object=self
+            )
+            vertice.save()
+
+
+    def criar_vertice_diferimento(self, data_referencia):
+        """
+        Vértice de diferimento:
+            Movimentação de entrada
+        """
+        if self.relacao_vertice.filter(data=data_referencia).exists() == False:
+            mov = 0
+
+            if data_referencia == self.data_inicio:
+                mov = self.valor_presente(data_referencia)
+
+            vertice = fm.Vertice(
+                fundo=self.fundo,
+                custodia=self.encontrar_custodiante(),
+                quantidade=1,
+                preco=1,
+                valor=self.valor_presente(data_referencia),
+                movimentacao=mov,
+                data=data_referencia,
+                content_object=self
+            )
+            vertice.save()
+
+    def criar_vertice_CPR(self, data_referencia):
+        """
+        Datas de movimentação: data de início e data de pagamento
+        Datas de quantidade: data de início até D-1 da data de pagamento
+        """
+        if self.relacao_vertice.filter(data=data_referencia).exists() == False:
+            mov = 0
+            val = 0
+
+            if data_referencia == self.data_inicio:
+                mov = self.valor_presente(data_referencia)
+            elif data_referencia == self.data_pagamento:
+                mov = -self.valor_presente(data_referencia)
+
+            if data_referencia == self.data_pagamento:
+                val = 0
+            else:
+                val = self.valor_presente(data_referencia)
+
+            vertice = fm.Vertice(
+                fundo=self.fundo,
+                custodia=self.encontrar_custodiante(),
+                quantidade=1,
+                valor=val,
+                preco=1,
+                movimentacao=mov,
+                data=data_referencia,
+                content_object=self
+            )
+            vertice.save()
+
+    def criar_vertice_emprestimo(self, data_referencia):
+
+        if self.relacao_vertice.filter(data=data_referencia).exists() == False:
+            val = 0
+
+            if data_referencia == self.data_pagamento or data_referencia == self.data_inicio:
+                val = 0
+            else:
+                val = self.valor_presente(data_referencia)
+            vertice = fm.Vertice(
+                fundo=self.fundo,
+                custodia=self.encontrar_custodiante(),
+                quantidade=1,
+                valor=val,
+                preco=1,
+                movimentacao=0,
+                data=data_referencia,
+                content_object=self
+            )
+            vertice.save()
+
+    def encontrar_custodiante(self):
+        """
+        Encontra quem é o custodiante do ativo relativo ao CPR
+        """
+        if type(self.content_object) != BoletaCambio and \
+            type(self.content_object) != BoletaPassivo and \
+            self.content_object != None:
+            return self.content_object.custodia
+        elif type(self.content_object) == BoletaCambio:
+            if "origem" in self.descricao:
+                return self.content_object.caixa_origem.custodia
+            else:
+                return self.content_object.caixa_destino.custodia
+        elif self.content_object == None:
+            return self.fundo.custodia
+
+class BoletaPassivo(BaseModel):
     """
     Boleta de movimentação de passivo de fundos.
     Deve criar um certificado de passivo quando a boleta for cotizável.
