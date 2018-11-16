@@ -8,6 +8,7 @@ Responsabilidades deste app:
 """
 import decimal
 from django.db import models
+from django.db.models import Sum
 from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelation
 from django.contrib.contenttypes.models import ContentType
 from phonenumber_field.modelfields import PhoneNumberField
@@ -138,27 +139,31 @@ class Fundo(BaseModel):
         FECHAMENTO DE FUNDO
         Para fazer o fechamento de um fundo em uma determinada data de referência, é
         preciso:
-            - Fechar todas as boletas do fundo que ainda não foram fechadas.
-            - Reunir todos os vértices referentes ao fundo na data de referencia.
             - Verificar, no app Mercado, se há algum provento cuja ex-date seja na
         data de referência. Se houver o ativo na carteira, deve processar o provento
         de forma apropriada:
-            - Dividendo/JSCP:
-                - Cria uma movimentação no ativo na data_ex
-                - Criar um CPR com data de início na data ex e data de pagamento
-                igual à data de pagamento do provento.
-                - Cria uma provisão com data de pagamento igual à data de pagamento
-                do provento, e valor financeiro igual ao valor bruto por ação *
-                quantidade de ações na data.
-            - Bonificação em ações:
-                - Cria uma quantidade do ativo na data de pagamento do provento
-                igual a (valor bruto - 1) * quantidade na data ex do provento.
-            - Direitos de subscrição:
-                - Cria uma quantidade do ativo representante do direito de
-                subscrição na data ex do provento.
-                - No momento em que a subscrição for paga, cria a movimentação de
-                entrada do ativo e boleta de provisão para a saída de caixa para
-                pagamento.
+                - Dividendo/JSCP:
+                    - Cria uma movimentação no ativo na data_ex
+                    - Criar um CPR com data de início na data ex e data de pagamento
+                    igual à data de pagamento do provento.
+                    - Cria uma provisão com data de pagamento igual à data de pagamento
+                    do provento, e valor financeiro igual ao valor bruto por ação *
+                    quantidade de ações na data com do provento.
+                - Bonificação em ações:
+                    - Cria uma quantidade do ativo na data de pagamento do provento
+                    igual a (valor bruto - 1) * quantidade na data com do provento.
+                - Direitos de subscrição:
+                    - Cria uma quantidade do ativo representante do direito de
+                    subscrição na data ex do provento.
+                    - No momento em que a subscrição for paga, cria a movimentação de
+                    entrada do ativo e boleta de provisão para a saída de caixa para
+                    pagamento.
+            - Fechar todas as boletas do fundo que ainda não foram fechadas.
+            - Reunir todas as quantidades com data menor ou igual que a data de
+        referência, e movimentações com data igual à data de referência, e
+        criar vértices para o fundo.
+            - Reunir todos os vértices referentes ao fundo na data de referencia.
+
             - Reunir todas as quantidades referentes ao fundo, com data igual ou
         anterior à data de referência. Quantidades são cumulativas. Consolidar
         e descartar aqueles que ficarem zerados (seria possível verificar
@@ -166,20 +171,35 @@ class Fundo(BaseModel):
         dia anterior.)
             - Reunir todas as movimentações referentes ao fundo, com data igual
         à data de referência. Movimentações são pontuais.
-            - Reunir todas as boletas de CPR com data de início inferior à data de
-        referência e data de pagamento superior à data de referência. Se boletas de
+            - Reunir todas as boletas de CPR com data de início inferior ou igual à data de
+        referência e data de pagamento superior ou igual à data de referência. Se boletas de
         CPR criarem movimentações e quantidades, não haverá necessidade de reunir
         as boletas, pois seus efeitos já seriam sentidos pelas quantidades e
         movimentações.
+            - Cálculo da cota, considerando PL e movimentações feitas.
+            - Atualização do número de cotas, caso tenha havido uma alteração
+        devido à movimentação.
         """
-        pass
+        self.fechar_boletas_do_fundo(data_referencia)
+
 
     def fechar_boletas_do_fundo(self, data_referencia):
         """
         Reúne todas as boletas relevantes para a data de referência e faz seu
         fechamento.
         """
-        pass
+        self.fechar_boletas_acao(data_referencia)
+        self.fechar_boletas_cambio(data_referencia)
+        self.fechar_boletas_rf_off(data_referencia)
+        self.fechar_boletas_rf_local(data_referencia)
+        self.fechar_boletas_emprestimo(data_referencia)
+        self.fechar_boletas_fundo_local(data_referencia)
+        self.fechar_boletas_fundo_offshore(data_referencia)
+        self.fechar_boletas_fundo_local_como_ativo(data_referencia)
+        self.fechar_boletas_fundo_off_como_ativo(data_referencia)
+        self.fechar_boletas_passivo(data_referencia)
+        self.fechar_boletas_CPR(data_referencia)
+        self.fechar_boletas_provisao(data_referencia)
 
     def fechar_boletas_acao(self, data_referencia):
         """
@@ -190,6 +210,130 @@ class Fundo(BaseModel):
         boletas = BoletaAcao.objects.filter(fundo=self, data_operacao=data_referencia)
         for boleta in boletas:
             boleta.fechar_boleta()
+
+    def fechar_boletas_rf_local(self, data_referencia):
+        from boletagem.models import BoletaRendaFixaLocal
+        for boleta in BoletaRendaFixaLocal.objects.filter(fundo=self, data_operacao=data_referencia):
+            boleta.fechar_boleta()
+
+    def fechar_boletas_rf_off(self, data_referencia):
+        from boletagem.models import BoletaRendaFixaOffshore
+        for boleta in BoletaRendaFixaOffshore.objects.filter(fundo=self,\
+            data_operacao=data_referencia):
+            boleta.fechar_boleta()
+
+    def fechar_boletas_fundo_local(self, data_referencia):
+        from boletagem.models import BoletaFundoLocal
+        # Busca as boletas que possuem cotização anterior à liquidação
+        for boleta in BoletaFundoLocal.objects.filter(fundo=self, \
+            data_cotizacao__lte=data_referencia, \
+            data_liquidacao__gte=data_referencia):
+            boleta.fechar_boleta()
+
+        # Busca as boletas que possuem data de liquidação anterior à cotização.
+        for boleta in BoletaFundoLocal.objects.filter(fundo=self, \
+            data_cotizacao__gte=data_referencia, \
+            data_liquidacao__lte=data_referencia):
+            boleta.fechar_boleta()
+
+    def fechar_boletas_fundo_local_como_ativo(self, data_referencia):
+        """
+        Busca BoletaFundoLocal em que o ativo negociado é o fundo
+        """
+        from boletagem.models import BoletaFundoLocal
+        from ativos.models import Fundo_Local
+        # Busca o ativo correspondente ao fundo local
+        fundo = Fundo_Local.objects.get(gestao=self)
+        for boleta in BoletaFundoLocal.objects.filter(ativo=fundo, \
+            data_cotizacao__lte=data_referencia, \
+            data_liquidacao__gte=data_referencia):
+            boleta.fechar_boleta()
+
+        for boleta in BoletaFundoLocal.objects.filter(ativo=fundo, \
+            data_cotizacao__gte=data_referencia, \
+            data_liquidacao__lte=data_referencia):
+            boleta.fechar_boleta()
+
+    def fechar_boletas_fundo_offshore(self, data_referencia):
+        from boletagem.models import BoletaFundoOffshore
+        for boleta in BoletaFundoOffshore.objects.filter(fundo=self).\
+            exclude(estado=BoletaFundoOffshore.ESTADO[5][0]):
+            boleta.fechar_boleta(data_referencia)
+
+    def fechar_boletas_fundo_off_como_ativo(self, data_referencia):
+        """
+        Busca BoletaFundoOffshore em que o ativo negociado é o fundo
+        """
+        from boletagem.models import BoletaFundoOffshore
+        from ativos.models import Fundo_Offshore
+        # Busca o ativo correspondente ao fundo local
+        fundo = Fundo_Offshore.objects.filter(gestao=self).first()
+
+        for boleta in BoletaFundoOffshore.objects.filter(ativo=fundo, \
+            data_cotizacao__lte=data_referencia, \
+            data_liquidacao__gte=data_referencia):
+            boleta.fechar_boleta()
+
+        for boleta in BoletaFundoOffshore.objects.filter(ativo=fundo, \
+            data_cotizacao__gte=data_referencia, \
+            data_liquidacao__lte=data_referencia):
+            boleta.fechar_boleta()
+
+    def fechar_boletas_passivo(self, data_referencia):
+        from boletagem.models import BoletaPassivo
+        for boleta in BoletaPassivo.objects.filter(fundo=self, \
+            data_cotizacao__gte=data_referencia):
+            boleta.fechar_boleta()
+
+    def fechar_boletas_emprestimo(self, data_referencia):
+        """
+        Deve pegar todas as boletas que não possuem data de liquidação e
+        boletas cuja data de liquidação é igual à data de referência.
+        """
+        from boletagem.models import BoletaEmprestimo
+        for boleta in BoletaEmprestimo.objects.filter(fundo=self, \
+            data_liquidacao=None):
+            boleta.fechar_boleta(data_referencia)
+
+    def fechar_boletas_cambio(self, data_referencia):
+        from boletagem.models import BoletaCambio
+        for boleta in BoletaCambio.objects.filter(fundo=self, \
+            data_operacao=data_referencia):
+            boleta.fechar_boleta()
+
+    def fechar_boletas_CPR(self, data_referencia):
+        from boletagem.models import BoletaCPR
+        for boleta in BoletaCPR.objects.filter(fundo=self, \
+            data_inicio__lte=data_referencia, \
+            data_pagamento__gte=data_referencia):
+            boleta.fechar_boleta(data_referencia)
+
+    def fechar_boletas_provisao(self, data_referencia):
+        from boletagem.models import BoletaProvisao
+        # Busca boletas com estado pendente.
+        for boleta in BoletaProvisao.objects.filter(fundo=self, \
+            estado=BoletaProvisao.ESTADO[0][0]):
+            boleta.fechar_boleta(data_referencia)
+
+    """
+    Criação de vértices:
+        - Juntar todos as quantidades com data menor ou igual à data de
+        fechamento. Descartar aquelas que possuem quantidade total 0.
+        - Juntar todas as movimentações com data igual à data de fechamento.
+    """
+    def juntar_quantidades(self, data_referencia):
+        """ datetime -> Queryset
+        Busca, no banco de dados, todas as quantidades com data menor ou igual
+        à data de referência, consolida-os, e devolve as quantidades consolidadas
+        """
+        import ativos.models as am
+        object_type = ContentType.objects.get_for_model(am.Acao)
+        resultado = Quantidade.objects.prefetch_related('objeto_quantidade').\
+            filter(data__lte=data_referencia, \
+            fundo=self, tipo_quantidade=object_type).\
+            values('objeto_quantidade', 'data').annotate(posicao=Sum('qtd'))
+        for dicionario in resultado:
+            print(dicionario)
 
 class Administradora(models.Model):
     """

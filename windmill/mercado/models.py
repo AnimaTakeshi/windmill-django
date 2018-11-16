@@ -81,7 +81,7 @@ class Preco(BaseModel):
     preco_contabil = models.DecimalField(max_digits=13, decimal_places=6, blank=True, null=True)
     # Preço gerencial de um ativo. Informado pelo gestor do fundo.
     preco_gerencial = models.DecimalField(max_digits=13, decimal_places=6, blank=True, null=True)
-    # Estimativa'
+    # Estimativa
     preco_estimado = models.DecimalField(max_digits=13, decimal_places=6, blank=True, null=True)
 
     class Meta:

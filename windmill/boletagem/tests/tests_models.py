@@ -1226,6 +1226,7 @@ class BoletaFundoLocalUnitTest(TestCase):
         self.assertFalse(copia.fechado())
         copia.fechar_boleta()
         self.assertTrue(copia.fechado())
+        self.assertTrue(copia.relacao_passivo.exists())
 
     def test_fechar_boleta_sem_cota_ativo_gerido_sem_preco_no_sistema(self):
         """
@@ -1246,7 +1247,7 @@ class BoletaFundoLocalUnitTest(TestCase):
         self.assertTrue(copia.boleta_CPR.all().exists())
         self.assertFalse(copia.relacao_quantidade.all().exists())
         self.assertFalse(copia.relacao_movimentacao.all().exists())
-        self.assertFalse(copia.relacao_passivo.all().exists())
+        self.assertTrue(copia.relacao_passivo.all().exists())
         self.assertFalse(copia.fechado())
 
     def test_fechar_boleta_sem_cota_ativo_gerido_com_preco_no_sistema(self):
@@ -2712,7 +2713,7 @@ class BoletaProvisaoUnitTests(TestCase):
         self.assertFalse(copia.relacao_quantidade.exists())
         self.assertFalse(copia.relacao_movimentacao.exists())
         self.assertEqual(copia.estado, copia.ESTADO[0][0])
-        copia.fechar_boleta()
+        copia.fechar_boleta(copia.data_pagamento)
         self.assertTrue(copia.relacao_quantidade.exists())
         self.assertTrue(copia.relacao_movimentacao.exists())
         self.assertEqual(copia.estado, copia.ESTADO[1][0])
