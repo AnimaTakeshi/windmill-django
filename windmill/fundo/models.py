@@ -12,6 +12,7 @@ from django.db.models import Sum
 from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelation
 from django.contrib.contenttypes.models import ContentType
 from phonenumber_field.modelfields import PhoneNumberField
+import pandas as pd
 
 # Create your models here.
 
@@ -73,7 +74,8 @@ class Fundo(BaseModel):
         ("Fundo de Ações", "Fundo de Ações"),
         ("Fundo Multimercado", "Fundo Multimercado"),
         ("Fundo Imobiliário", "Fundo Imobiliário"),
-        ("Fundo de Renda Fixa", "Fundo de Renda Fixa")
+        ("Fundo de Renda Fixa", "Fundo de Renda Fixa"),
+        ("Fundo de Participações", "Fundo de Participações")
     )
     CAPITALIZACAO = (
         ("Diária","Diária"),
@@ -182,7 +184,6 @@ class Fundo(BaseModel):
         """
         self.fechar_boletas_do_fundo(data_referencia)
 
-
     def fechar_boletas_do_fundo(self, data_referencia):
         """
         Reúne todas as boletas relevantes para a data de referência e faz seu
@@ -204,12 +205,14 @@ class Fundo(BaseModel):
     def fechar_boletas_acao(self, data_referencia):
         """
         Pega todas as boletas de ação do fundo, para a data de referência, e
-        executa o fechamento delas.
+        executa o fechamento delas. Resultado esperado - Criação de quantidades,
+        movimentações e vértice do CPR
         """
         from boletagem.models import BoletaAcao
         boletas = BoletaAcao.objects.filter(fundo=self, data_operacao=data_referencia)
-        for boleta in boletas:
-            boleta.fechar_boleta()
+        if boletas:
+            for boleta in boletas:
+                boleta.fechar_boleta()
 
     def fechar_boletas_rf_local(self, data_referencia):
         from boletagem.models import BoletaRendaFixaLocal
@@ -281,9 +284,11 @@ class Fundo(BaseModel):
 
     def fechar_boletas_passivo(self, data_referencia):
         from boletagem.models import BoletaPassivo
-        for boleta in BoletaPassivo.objects.filter(fundo=self, \
-            data_cotizacao__gte=data_referencia):
-            boleta.fechar_boleta()
+        boletas_passivo = BoletaPassivo.objects.filter(fundo=self, \
+            data_cotizacao__gte=data_referencia)
+        if boletas_passivo:
+            for boleta in boletas_passivo:
+                boleta.fechar_boleta()
 
     def fechar_boletas_emprestimo(self, data_referencia):
         """
@@ -311,9 +316,9 @@ class Fundo(BaseModel):
     def fechar_boletas_provisao(self, data_referencia):
         from boletagem.models import BoletaProvisao
         # Busca boletas com estado pendente.
-        for boleta in BoletaProvisao.objects.filter(fundo=self, \
-            estado=BoletaProvisao.ESTADO[0][0]):
-            boleta.fechar_boleta(data_referencia)
+        for boleta in BoletaProvisao.objects.filter(fundo=self):
+            if boleta.fechado() == False:
+                boleta.fechar_boleta(data_referencia)
 
     """
     Criação de vértices:
@@ -321,19 +326,320 @@ class Fundo(BaseModel):
         fechamento. Descartar aquelas que possuem quantidade total 0.
         - Juntar todas as movimentações com data igual à data de fechamento.
     """
+
     def juntar_quantidades(self, data_referencia):
-        """ datetime -> Queryset
-        Busca, no banco de dados, todas as quantidades com data menor ou igual
-        à data de referência, consolida-os, e devolve as quantidades consolidadas
+        """ datetime -> DataFrame
+        Junta as quantidades dos diferentes tipos de ativos e retorna o
+        dataframe com todos os ativos.
         """
         import ativos.models as am
+
+        tipo_objeto = ContentType.objects.get_for_model(am.Acao)
+        carteira = self.juntar_quantidades_ativo(data_referencia, tipo_objeto)
+
+        tipo_objeto = ContentType.objects.get_for_model(am.Renda_Fixa)
+        carteira = carteira.append(self.juntar_quantidades_ativo(data_referencia, tipo_objeto))
+
+        tipo_objeto = ContentType.objects.get_for_model(am.Caixa)
+        carteira = carteira.append(self.juntar_quantidades_ativo(data_referencia, tipo_objeto))
+
+        tipo_objeto = ContentType.objects.get_for_model(am.Fundo_Local)
+        carteira = carteira.append(self.juntar_quantidades_ativo(data_referencia, tipo_objeto))
+
+        tipo_objeto = ContentType.objects.get_for_model(am.Fundo_Offshore)
+        carteira = carteira.append(self.juntar_quantidades_ativo(data_referencia, tipo_objeto))
+
+        return carteira
+
+    def juntar_quantidades_ativo(self, data_referencia, object_type):
+        """ datetime -> DataFrame
+        Busca, no banco de dados, todas as quantidades de um tipo de ativo
+        com data menor ou igual à data de referência, e devolve
+        as quantidades.
+        """
+        import ativos.models as am
+        pd.set_option('display.max_columns', 10)
+        """
+        Preciso buscar todas as quantidades sem consolidá-las
+        """
+        # resultado = Quantidade.objects.filter(data__lte=data_referencia, \
+        # fundo=self, tipo_quantidade=object_type).\
+        # values('tipo_id', 'data', 'fundo').annotate(posicao=Sum('qtd'))
+        resultado = Quantidade.objects.filter(data__lte=data_referencia, \
+        fundo=self, tipo_quantidade=object_type)
+
+        if resultado:
+            """
+            Buscando as informações de custódia de cada ativo
+            """
+            import boletagem.models as bm
+            dicionario_boleta_custodia = []
+            for qtd in resultado:
+                if type(qtd.content_object) != bm.BoletaProvisao:
+                    if type(qtd.content_object) == bm.BoletaAcao or \
+                        type(qtd.content_object) == bm.BoletaRendaFixaLocal or \
+                        type(qtd.content_object) == bm.BoletaRendaFixaOffshore:
+                        dicionario_boleta_custodia.append({'id':qtd.id, \
+                            'custodia_id':qtd.content_object.custodia_id, \
+                            'corretora_id':qtd.content_object.corretora.id})
+                    else:
+                        dicionario_boleta_custodia.append({'id':qtd.id, \
+                        'custodia_id':qtd.content_object.custodia_id, \
+                        'corretora_id':qtd.content_object.caixa_alvo.corretora.id})
+
+                else:
+                    dicionario_boleta_custodia.append({'id':qtd.id, \
+                    'custodia_id':qtd.content_object.caixa_alvo.custodia.id, \
+                    'corretora_id':qtd.content_object.caixa_alvo.corretora.id})
+            # Dataframe de boletas com custódia
+            # Possui id_quantidade(id), id_custodia
+            custodia = pd.DataFrame(dicionario_boleta_custodia)
+            # Possui id_quantidade(id), id_ativo(tipo_id)
+            resultado = pd.DataFrame(list(resultado.values('id', 'tipo_id', 'object_id', 'qtd', 'fundo')))
+            # Possui id_ativo (id)
+            ativos = pd.DataFrame(list(am.Ativo.objects.all().values('id', 'nome')))
+            # Juntando quantidades com suas respectivas corretoras e custódias
+            resultado = resultado.merge(custodia, right_on='id', left_on='id')
+            # Juntando quantidades com os nomes das ações.
+            """
+            Este último join abaixo pode vir a ser removido futuramente.
+            """
+            resultado = resultado.merge(ativos, right_on='id', \
+                left_on='tipo_id').drop(['id_y', 'object_id'], axis=1)
+
+            resultado['data'] = data_referencia
+
+            return resultado
+        else:
+            return pd.DataFrame()
+
+    def juntar_movimentacoes(self, data_referencia):
+        """
+        Busca as movimentações de cada tipo de ativo e as consolida em um
+        dataframe único. Caso não haja, retorna um dataframe vazio
+        """
+        import ativos.models as am
+
         object_type = ContentType.objects.get_for_model(am.Acao)
-        resultado = Quantidade.objects.prefetch_related('objeto_quantidade').\
-            filter(data__lte=data_referencia, \
-            fundo=self, tipo_quantidade=object_type).\
-            values('objeto_quantidade', 'data').annotate(posicao=Sum('qtd'))
-        for dicionario in resultado:
-            print(dicionario)
+        carteira = self.juntar_movimentacoes_ativo(data_referencia, object_type)
+
+        tipo_objeto = ContentType.objects.get_for_model(am.Renda_Fixa)
+        carteira = carteira.append(self.juntar_movimentacoes_ativo(data_referencia, tipo_objeto))
+
+        tipo_objeto = ContentType.objects.get_for_model(am.Caixa)
+        carteira = carteira.append(self.juntar_movimentacoes_ativo(data_referencia, tipo_objeto))
+
+        tipo_objeto = ContentType.objects.get_for_model(am.Fundo_Local)
+        carteira = carteira.append(self.juntar_movimentacoes_ativo(data_referencia, tipo_objeto))
+
+        tipo_objeto = ContentType.objects.get_for_model(am.Fundo_Offshore)
+        carteira = carteira.append(self.juntar_movimentacoes_ativo(data_referencia, tipo_objeto))
+
+        return carteira
+
+    def juntar_movimentacoes_ativo(self, data_referencia, object_type):
+        """
+        Busca todas as movimentações de um determinado tipo de ativo, com data
+        igual à data de movimentação.
+        """
+        mov = Movimentacao.objects.filter(data=data_referencia, fundo=self,\
+            tipo_movimentacao=object_type)
+
+        if mov:
+            # Transformando o resultado em dataframe
+            df_mov = pd.DataFrame(list(mov.values('id', 'data', 'fundo', 'valor', 'tipo_id')))
+            # buscando a custodia dos ativos movimentados
+            import boletagem.models as bm
+            import ativos.models as am
+            dicionario_boleta_custodia = []
+            for m in mov:
+                if type(m.content_object) != bm.BoletaProvisao:
+                    if type(m.content_object) == bm.BoletaAcao or \
+                        type(m.content_object) == bm.BoletaRendaFixaLocal or \
+                        type(m.content_object) == bm.BoletaRendaFixaOffshore:
+                        dicionario_boleta_custodia.append({'id':m.id, \
+                            'custodia_id':m.content_object.custodia_id, \
+                            'corretora_id':m.content_object.corretora.id,\
+                            'descricao':m.__str__()})
+                    else:
+                        dicionario_boleta_custodia.append({'id':m.id, \
+                        'custodia_id':m.content_object.custodia_id, \
+                        'corretora_id':m.content_object.caixa_alvo.corretora.id, \
+                        'descricao':m.__str__()})
+                    # dicionario_boleta_custodia.append({'id':m.id, 'custodia_id':m.content_object.custodia_id, 'descricao':m.__str__()})
+                else:
+                    dicionario_boleta_custodia.append({'id':m.id, \
+                    'custodia_id':m.content_object.caixa_alvo.custodia.id, \
+                    'corretora_id':m.content_object.caixa_alvo.corretora.id, \
+                    'descricao':m.content_object.descricao})
+            # Dataframe de boletas com custódia
+            # Possui id_quantidade(id), id_custodia
+            custodia = pd.DataFrame(dicionario_boleta_custodia)
+            # Possui id_ativo (id)
+            ativos = pd.DataFrame(list(am.Ativo.objects.all().values('id', 'nome')))
+
+            df_mov = df_mov.merge(custodia, right_on='id', left_on='id')
+            """
+            Este último join pode vir a ser removido futuramente.
+            """
+            df_mov = df_mov.merge(ativos, right_on='id', \
+                left_on='tipo_id').drop(['id_y'], axis=1)
+
+            df_mov['data'] = data_referencia
+
+            return df_mov
+
+        else:
+            return pd.DataFrame()
+
+    def criar_vertices(self, data_referencia):
+        """
+        Recebe uma data de referência, junta as quantidades e movimentações
+        de ativos e cria os vértices da carteira baseado nas quantidades e
+        movimentações
+        """
+        import ativos.models as am
+        import mercado.models as mm
+        import math
+
+        print(data_referencia)
+
+        carteira_qtd = self.juntar_quantidades(data_referencia)
+        carteira_mov = self.juntar_movimentacoes(data_referencia)
+
+        lista_qtds = pd.DataFrame()
+        if carteira_qtd.empty == False:
+            # Antes de criar os vértices, precisamos consolidar as quantidades e
+            # ver quais ativos já estão com posição zerada, consolidando o dataframe
+            # por tipo_id (id do ativo) e custodia_id(id da custódia do ativo.)
+            carteira_qtd_completa = (carteira_qtd.groupby(['nome', 'fundo', \
+                'data', 'custodia_id', 'corretora_id', 'tipo_id', 'id_x'])['qtd'].sum().to_frame())
+
+            carteira_qtd_consolidada = (carteira_qtd.groupby(['nome', 'fundo', \
+                'data', 'custodia_id', 'corretora_id', 'tipo_id'])['qtd'].sum().to_frame())
+
+            carteira_qtd_completa.reset_index(inplace=True)
+
+            lista_qtds = carteira_qtd_consolidada[carteira_qtd_consolidada['qtd'] != 0].merge(carteira_qtd_completa, how='inner', \
+                left_on=['nome', 'fundo', 'data', 'custodia_id', 'corretora_id', \
+                'tipo_id'], \
+                right_on=['nome', 'fundo', 'data', 'custodia_id', 'corretora_id', \
+                'tipo_id'])[['id_x', 'nome', 'fundo', 'data', 'custodia_id', \
+                    'corretora_id', 'tipo_id', 'qtd_x']]
+
+            lista_qtds.rename(columns={'id_x':'id_qtd', 'qtd_x':'qtd'}, inplace=True)
+            lista_qtds.set_index(['nome', 'fundo', 'data', 'custodia_id', \
+                'corretora_id', 'tipo_id'], inplace=True)
+
+        lista_movs = pd.DataFrame()
+        if carteira_mov.empty == False:
+            carteira_mov_completa = (carteira_mov.groupby(['nome', 'fundo', \
+                'data', 'custodia_id', 'corretora_id', 'tipo_id', 'id_x'])['valor'].sum().to_frame())
+
+            carteira_mov_consolidada = (carteira_mov.groupby(['nome', 'fundo', \
+                'data', 'custodia_id', 'corretora_id', 'tipo_id'])['valor'].sum().to_frame())
+
+            carteira_mov_completa.reset_index(inplace=True)
+
+            # Lista que encontra as posições que não possuem posição zerada.
+            # Compara a carteira com as posições consolidadadas vs a carteira aberta
+            # exaustivamente.
+            lista_movs = carteira_mov_consolidada[carteira_mov_consolidada['valor'] != 0].merge(carteira_mov_completa, how='inner', \
+                left_on=['nome', 'fundo', 'data', 'custodia_id', 'corretora_id', \
+                'tipo_id'], \
+                right_on=['nome', 'fundo', 'data', 'custodia_id', 'corretora_id', \
+                'tipo_id'])[['id_x', 'nome', 'fundo', 'data', 'custodia_id', \
+                    'corretora_id', 'tipo_id', 'valor_x']]
+
+            lista_movs.rename(columns={'id_x':'id_mov', 'valor_x':'mov'}, inplace=True)
+
+            lista_movs.set_index(['nome', 'fundo', 'data', 'custodia_id', \
+                'corretora_id', 'tipo_id'], inplace=True)
+
+        # Juntando lista de qtd e mov
+        lista_vertices = pd.DataFrame()
+        if lista_movs.empty == False and lista_qtds.empty == False:
+            lista_vertices = lista_qtds.merge(lista_movs, how='outer', left_index=True, right_index=True)
+        elif lista_movs.empty == True:
+            lista_qtds['mov'] = decimal.Decimal('NaN')
+            lista_qtds['id_mov'] = decimal.Decimal('NaN')
+            lista_vertices = lista_qtds.copy()
+        elif lista_qtds.empty == True:
+            lista_movs['qtd'] = decimal.Decimal('NaN')
+            lista_movs['id_qtd'] = decimal.Decimal('NaN')
+            lista_vertices = lista_movs.copy()
+        print(lista_vertices)
+
+        index_list = lista_vertices.index.tolist()
+        index_names = lista_vertices.index.names
+
+        for ativo in index_list:
+            # Criando o vértice com os valores
+            vertice = dict()
+            index_values = lista_vertices.loc[ativo].index.tolist()[0]
+            for i, valor in enumerate(index_values):
+                vertice[index_names[i]] = valor
+            ativo_vertice = am.Ativo.objects.get(id=vertice['tipo_id'])
+
+            preco = mm.Preco.objects.filter(data_referencia__lte=vertice['data'].date(),\
+                ativo=ativo_vertice).order_by('-data_referencia').first()
+
+            fundo = Fundo.objects.get(id=vertice['fundo'])
+
+            corretora = Corretora.objects.get(id=vertice['corretora_id'])
+
+            custodia = Custodiante.objects.get(id=vertice['custodia_id'])
+
+            preco_fechamento = decimal.Decimal(preco.preco_fechamento).quantize(decimal.Decimal('1.000000'))
+
+            quantidade = decimal.Decimal(lista_vertices.loc[ativo]['qtd'].values[0])
+
+            movimentacao = decimal.Decimal(lista_vertices.loc[ativo]['mov'].values[0])
+
+            novo_vertice = Vertice(
+                fundo=fundo,
+                custodia=custodia,
+                corretora=corretora,
+                quantidade=quantidade,
+                movimentacao=movimentacao,
+                valor=preco_fechamento*quantidade,
+                data=vertice['data'].date(),
+                content_object=ativo_vertice,
+                preco=preco_fechamento
+            )
+            novo_vertice.save()
+            vertice_id = novo_vertice.id
+
+            # Criando os itens de casamento entre quantidade e vértice
+            # Tuplas = (quantidade_id, vertice_id)
+
+            for id in lista_vertices.loc[ativo]['id_qtd'].drop_duplicates():
+                if math.isnan(id) == False:
+                    cas_qtd_vert = CasamentoVerticeQuantidade(
+                        vertice=novo_vertice,
+                        quantidade=Quantidade.objects.get(id=id)
+                    )
+                    cas_qtd_vert.save()
+
+            for id in lista_vertices.loc[ativo]['id_mov'].drop_duplicates():
+                if math.isnan(id) == False:
+                    cas_mov_vert = CasamentoVerticeMovimentacao(
+                        vertice=novo_vertice,
+                        movimentacao=Movimentacao.objects.get(id=id)
+                    )
+                    cas_mov_vert.save()
+
+    def consolidar_vertices(self, data_referencia):
+        """
+        Junta todos os vértices criados.
+        """
+        import boletagem.models as bm
+        boletas = pd.DataFrame(list(bm.BoletaCPR.objects.all().values('id', 'descricao')))
+        v = Vertice.objects.all().values('object_id', 'fundo', 'data', 'valor', 'movimentacao')
+        vertices = pd.DataFrame(list(v))
+
+        vertices = vertices.merge(boletas, left_on='object_id', right_on='id').drop(['object_id','id'], axis=1)
+        print(vertices)
 
 class Administradora(models.Model):
     """
@@ -528,6 +834,8 @@ class Vertice(BaseModel):
     """
     fundo = models.ForeignKey('Fundo', on_delete=models.PROTECT)
     custodia = models.ForeignKey('Custodiante', on_delete=models.PROTECT)
+    corretora = models.ForeignKey('Corretora', on_delete=models.PROTECT, \
+        blank=True, null=True)
     # Quantidade do ativo.
     quantidade = models.DecimalField(decimal_places=6, max_digits=20)
     # Valor financeiro do ativo.
@@ -570,7 +878,8 @@ class Quantidade(BaseModel):
     objeto_quantidade = GenericForeignKey('tipo_quantidade', 'tipo_id')
 
     def __str__(self):
-        return '%s' % (self.content_object.__str__())
+        return 'Ativo: %s' % (self.content_object.__str__()) + \
+            '\nQuantidade: %s' % (self.qtd)
 
 class Movimentacao(BaseModel):
     """
@@ -643,7 +952,7 @@ class CertificadoPassivo(BaseModel):
     # Quantidade de cotas que foram aplicadas originalmente.
     qtd_cotas = models.DecimalField(max_digits=15, decimal_places=7)
     # Valor da cota no momento da aplicação
-    valor_cota = models.DecimalField(max_digits=10, decimal_places=2)
+    valor_cota = models.DecimalField(max_digits=14, decimal_places=6)
     # Quantidade de cotas desta série que ainda estão aplicadas.
     # Conforme o cotista realiza resgates do fundo, cotas de certificados mais
     # antigos são resgatadas, aumentando o valor da cota média.

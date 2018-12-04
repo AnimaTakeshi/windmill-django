@@ -617,10 +617,12 @@ class BoletaRendaFixaOffshore(BaseModel):
         # Checar se já há boleta de provisão criada relacionada com esta.
         if self.boleta_provisao.all().exists() == False:
             op = ''
+            i_op = 1
             if self.operacao == "C":
                 op = 'Compra '
             else:
                 op = 'Venda '
+                i_op = -1
             # Criar boleta de provisão
             boleta_provisao = BoletaProvisao(
                 descricao = op + self.ativo.nome,
@@ -628,7 +630,7 @@ class BoletaRendaFixaOffshore(BaseModel):
                 fundo = self.fundo,
                 data_pagamento = self.data_liquidacao,
                 # A movimentação de caixa tem sinal oposto à variação de quantidade
-                financeiro = - (self.preco * self.quantidade) + self.corretagem,
+                financeiro = -(self.preco * abs(self.quantidade)*i_op) + self.corretagem,
                 content_object = self
 
             )
@@ -913,7 +915,7 @@ class BoletaFundoLocal(BaseModel):
             passivo = BoletaPassivo(
                 cotista=cotista,
                 valor=self.financeiro.quantize(decimal.Decimal('1.00')),
-                data_movimentacao=self.data_operacao,
+                data_operacao=self.data_operacao,
                 data_cotizacao=self.data_cotizacao,
                 data_liquidacao=self.data_liquidacao,
                 operacao=self.operacao,
@@ -1137,7 +1139,6 @@ class BoletaFundoOffshore(BaseModel):
                 Tarefas a executar:
                     - Apenas atualiza o estado.
         """
-        print(self.estado)
         if self.estado != self.ESTADO[5][0]:
             if self.estado == self.ESTADO[4][0]: # Pendente de liquidação e cotização.
                 if self.financeiro != None and data_referencia == self.data_liquidacao:
@@ -1409,7 +1410,7 @@ class BoletaFundoOffshore(BaseModel):
             passivo = BoletaPassivo(
                 cotista = cotista,
                 valor=self.financeiro.quantize(decimal.Decimal('1.00')),
-                data_movimentacao=self.data_operacao,
+                data_operacao=self.data_operacao,
                 data_cotizacao=self.data_cotizacao,
                 data_liquidacao=self.data_liquidacao,
                 operacao=self.operacao,
@@ -1824,7 +1825,7 @@ class BoletaCambio(BaseModel):
             cpr = BoletaCPR(
                 descricao='Câmbio: Caixa origem: - ' + self.caixa_origem.nome,
                 fundo=self.fundo,
-                valor_cheio=-abs(self.financeiro_origem),
+                valor_cheio=decimal.Decimal(-abs(self.financeiro_origem)).quantize(decimal.Decimal('1.00')),
                 data_inicio=self.data_operacao,
                 data_pagamento=self.data_liquidacao_origem,
                 content_object=self
@@ -1840,7 +1841,7 @@ class BoletaCambio(BaseModel):
             cpr = BoletaCPR(
                 descricao='Câmbio: Caixa destino - ' + self.caixa_destino.nome,
                 fundo=self.fundo,
-                valor_cheio=abs(self.financeiro_final),
+                valor_cheio=decimal.Decimal(abs(self.financeiro_final)).quantize(decimal.Decimal('1.00')),
                 data_inicio=self.data_operacao,
                 data_pagamento=self.data_liquidacao_destino,
                 content_object=self
@@ -1857,7 +1858,7 @@ class BoletaCambio(BaseModel):
                 descricao='Câmbio: Caixa origem - ' + self.caixa_origem.nome,
                 fundo=self.fundo,
                 data_pagamento=self.data_liquidacao_origem,
-                financeiro=-abs(self.financeiro_origem),
+                financeiro=decimal.Decimal(-abs(self.financeiro_origem)).quantize(decimal.Decimal('1.00')),
                 caixa_alvo=self.caixa_origem,
                 content_object=self
             )
@@ -1873,7 +1874,7 @@ class BoletaCambio(BaseModel):
                 descricao="Câmbio: Caixa destino - " + self.caixa_destino.nome,
                 fundo=self.fundo,
                 data_pagamento=self.data_liquidacao_destino,
-                financeiro=abs(self.financeiro_final),
+                financeiro=decimal.Decimal(abs(self.financeiro_final)).quantize(decimal.Decimal('1.00')),
                 caixa_alvo=self.caixa_destino,
                 content_object=self
             )
@@ -1909,6 +1910,12 @@ class BoletaProvisao(BaseModel):
     class Meta:
         verbose_name_plural = "Boletas de provisão"
 
+    def fechado(self):
+        """
+        Determina se uma boleta de provisão foi fechada ou não.
+        """
+        return self.relacao_quantidade.exists() and self.relacao_movimentacao.exists()
+
     def fechar_boleta(self, data_referencia):
         """
         Executa as funções para o fechamento da boleta.
@@ -1933,7 +1940,6 @@ class BoletaProvisao(BaseModel):
                 objeto_movimentacao=self.caixa_alvo,
                 content_object=self
             )
-            self.estado = self.ESTADO[1][0]
             self.save()
             mov.full_clean()
             mov.save()
@@ -1951,7 +1957,6 @@ class BoletaProvisao(BaseModel):
                 objeto_quantidade=self.caixa_alvo,
                 content_object=self
             )
-            self.estado = self.ESTADO[1][0]
             self.save()
             qtd.full_clean()
             qtd.save()
@@ -1995,7 +2000,8 @@ class BoletaCPR(BaseModel):
         ("Acúmulo", "Acúmulo"),
         ('Diferimento', 'Diferimento'),
         ("CPR", "CPR"),
-        ("Empréstimo", "Empréstimo")
+        ("Empréstimo", "Empréstimo"),
+        ("Taxa de administração", "Taxa de administração")
     )
 
     # Capitalização - A diarização/diferimento afeta o valor do CPR na
@@ -2174,7 +2180,6 @@ class BoletaCPR(BaseModel):
             )
             vertice.save()
 
-
     def criar_vertice_diferimento(self, data_referencia):
         """
         Vértice de diferimento:
@@ -2263,6 +2268,8 @@ class BoletaCPR(BaseModel):
                 return self.content_object.caixa_origem.custodia
             else:
                 return self.content_object.caixa_destino.custodia
+        elif type(self.content_object) == BoletaPassivo:
+            return self.content_object.fundo.caixa_padrao.custodia
         elif self.content_object == None:
             return self.fundo.custodia
 
@@ -2293,7 +2300,7 @@ class BoletaPassivo(BaseModel):
 
     cotista = models.ForeignKey('fundo.Cotista', on_delete=models.PROTECT)
     valor = models.DecimalField(max_digits=13, decimal_places=2)
-    data_movimentacao = models.DateField()
+    data_operacao = models.DateField()
     data_cotizacao = models.DateField()
     data_liquidacao = models.DateField()
     operacao = models.CharField(max_length=15, choices=OPERACAO)

@@ -85,6 +85,10 @@ class Acao(Ativo):
         return reverse('ativos:detalhe_acao', args=[str(self.id)])
 
 class Cambio(Ativo):
+    """
+    Não é um ativo em si, mas como possui valor (taxa de conversão entre
+    moedas), decidimos caracterizá-lo como tal para facilitar.
+    """
 
     moeda_origem = models.ForeignKey(Moeda, on_delete=models.PROTECT,
         null=False, blank=False, related_name='cambio_moeda_origem')
@@ -108,7 +112,7 @@ class Caixa(Ativo):
 
 class Fundo_Local(Ativo):
 
-    CPNJ = models.CharField(max_length=18, null=True, blank=True)
+    CNPJ = models.CharField(max_length=18, null=True, blank=True)
     # Indica quanto tempo depois do pedido a cotização de um resgate é feita
     data_cotizacao_resgate = models.DurationField()
     # Indica quanto tempo depois do pedido a liquidação de um resgate é feita

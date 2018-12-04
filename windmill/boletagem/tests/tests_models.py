@@ -1328,7 +1328,7 @@ class BoletaFundoLocalUnitTest(TestCase):
         # O nome do fundo é o nome do cotista.
         self.assertEqual(passivo.cotista.nome, copia.fundo.nome)
         self.assertEqual(passivo.valor, copia.financeiro)
-        self.assertEqual(passivo.data_movimentacao, copia.data_operacao)
+        self.assertEqual(passivo.data_operacao, copia.data_operacao)
         self.assertEqual(passivo.data_cotizacao, copia.data_cotizacao)
         self.assertEqual(passivo.data_liquidacao, copia.data_liquidacao)
         self.assertEqual(passivo.operacao, copia.operacao)
@@ -1573,7 +1573,7 @@ class BoletaFundoOffshoreUnitTest(TestCase):
 
         self.assertEqual(passivo.cotista.nome, copia.fundo.nome)
         self.assertEqual(passivo.valor, copia.financeiro)
-        self.assertEqual(passivo.data_movimentacao, copia.data_operacao)
+        self.assertEqual(passivo.data_operacao, copia.data_operacao)
         self.assertEqual(passivo.data_cotizacao, copia.data_cotizacao)
         self.assertEqual(passivo.data_liquidacao, copia.data_liquidacao)
         self.assertEqual(passivo.operacao, copia.operacao)
@@ -1746,7 +1746,7 @@ class BoletaFundoOffshoreUnitTest(TestCase):
 
         self.assertEqual(passivo.valor, copia.financeiro)
         self.assertEqual(passivo.operacao, copia.operacao)
-        self.assertEqual(passivo.data_movimentacao, copia.data_operacao)
+        self.assertEqual(passivo.data_operacao, copia.data_operacao)
         self.assertEqual(passivo.data_cotizacao, copia.data_cotizacao)
         self.assertEqual(passivo.data_liquidacao, copia.data_liquidacao)
         self.assertEqual(passivo.fundo, copia.ativo.gestao)
@@ -1835,7 +1835,7 @@ class BoletaFundoOffshoreUnitTest(TestCase):
 
         self.assertEqual(passivo.valor, copia.financeiro)
         self.assertEqual(passivo.operacao, copia.operacao)
-        self.assertEqual(passivo.data_movimentacao, copia.data_operacao)
+        self.assertEqual(passivo.data_operacao, copia.data_operacao)
         self.assertEqual(passivo.data_cotizacao, copia.data_cotizacao)
         self.assertEqual(passivo.data_liquidacao, copia.data_liquidacao)
         self.assertEqual(passivo.fundo, copia.ativo.gestao)
@@ -1911,7 +1911,7 @@ class BoletaFundoOffshoreUnitTest(TestCase):
 
         self.assertEqual(passivo.valor, copia.financeiro)
         self.assertEqual(passivo.operacao, copia.operacao)
-        self.assertEqual(passivo.data_movimentacao, copia.data_operacao)
+        self.assertEqual(passivo.data_operacao, copia.data_operacao)
         self.assertEqual(passivo.data_cotizacao, copia.data_cotizacao)
         self.assertEqual(passivo.data_liquidacao, copia.data_liquidacao)
         self.assertEqual(passivo.fundo, copia.ativo.gestao)
@@ -2017,7 +2017,7 @@ class BoletaFundoOffshoreUnitTest(TestCase):
 
         self.assertEqual(passivo.valor, copia.financeiro)
         self.assertEqual(passivo.operacao, copia.operacao)
-        self.assertEqual(passivo.data_movimentacao, copia.data_operacao)
+        self.assertEqual(passivo.data_operacao, copia.data_operacao)
         self.assertEqual(passivo.data_cotizacao, copia.data_cotizacao)
         self.assertEqual(passivo.data_liquidacao, copia.data_liquidacao)
         self.assertEqual(passivo.fundo, copia.ativo.gestao)
@@ -2122,7 +2122,7 @@ class BoletaFundoOffshoreUnitTest(TestCase):
 
         self.assertEqual(passivo.valor, boleta.financeiro)
         self.assertEqual(passivo.operacao, boleta.operacao)
-        self.assertEqual(passivo.data_movimentacao, boleta.data_operacao)
+        self.assertEqual(passivo.data_operacao, boleta.data_operacao)
         self.assertEqual(passivo.data_cotizacao, boleta.data_cotizacao)
         self.assertEqual(passivo.data_liquidacao, boleta.data_liquidacao)
         self.assertEqual(passivo.fundo, boleta.ativo.gestao)
@@ -2335,7 +2335,7 @@ class BoletaPassivoUnitTests(TestCase):
         # Boleta que faz aplicação - cria 1.000 cotas, valor de 1.000.000
         self.boleta_aplicacao = mommy.make('boletagem.BoletaPassivo',
             cotista=self.cotista,
-            data_movimentacao=datetime.date(year=2018, month=10, day=26),
+            data_operacao=datetime.date(year=2018, month=10, day=26),
             data_cotizacao=datetime.date(year=2018, month=10, day=27),
             data_liquidacao=datetime.date(year=2018, month=10, day=26),
             cota=decimal.Decimal('1000'),
@@ -2346,7 +2346,7 @@ class BoletaPassivoUnitTests(TestCase):
         # Boleta que faz aplicação - cria 1.000 cotas, valor de 1.000.000
         self.boleta_aplicacao_2016 = mommy.make('boletagem.BoletaPassivo',
             cotista=self.cotista,
-            data_movimentacao=datetime.date(year=2016, month=10, day=26),
+            data_operacao=datetime.date(year=2016, month=10, day=26),
             data_cotizacao=datetime.date(year=2016, month=10, day=27),
             data_liquidacao=datetime.date(year=2016, month=10, day=26),
             cota=decimal.Decimal('1000'),
@@ -2357,7 +2357,7 @@ class BoletaPassivoUnitTests(TestCase):
         # Boleta que faz aplicação - cria 500 cotas, valor de 1.000.000
         self.boleta_aplicacao_2017 = mommy.make('boletagem.BoletaPassivo',
             cotista=self.cotista,
-            data_movimentacao=datetime.date(year=2017, month=10, day=26),
+            data_operacao=datetime.date(year=2017, month=10, day=26),
             data_cotizacao=datetime.date(year=2017, month=10, day=27),
             data_liquidacao=datetime.date(year=2017, month=10, day=26),
             cota=decimal.Decimal('2000'),
@@ -2367,7 +2367,7 @@ class BoletaPassivoUnitTests(TestCase):
         )
         self.boleta_aplicacao_cotizacao_antes_da_liquidacao = mommy.make('boletagem.BoletaPassivo',
             cotista=self.cotista,
-            data_movimentacao=datetime.date(year=2018, month=10, day=26),
+            data_operacao=datetime.date(year=2018, month=10, day=26),
             data_cotizacao=datetime.date(year=2018, month=10, day=27),
             data_liquidacao=datetime.date(year=2018, month=10, day=28),
             cota=decimal.Decimal('1000'),
@@ -2378,7 +2378,7 @@ class BoletaPassivoUnitTests(TestCase):
         # Boleta que faz resgate
         self.boleta_resgate = mommy.make('boletagem.BoletaPassivo',
             cotista=self.cotista,
-            data_movimentacao=datetime.date(year=2018, month=10, day=26),
+            data_operacao=datetime.date(year=2018, month=10, day=26),
             data_cotizacao=datetime.date(year=2018, month=10, day=27),
             data_liquidacao=datetime.date(year=2018, month=10, day=26),
             cota=decimal.Decimal('1000'),
@@ -2388,7 +2388,7 @@ class BoletaPassivoUnitTests(TestCase):
         )
         self.boleta_resgate_cotizacao_antes_da_liquidacao = mommy.make('boletagem.BoletaPassivo',
             cotista=self.cotista,
-            data_movimentacao=datetime.date(year=2018, month=10, day=26),
+            data_operacao=datetime.date(year=2018, month=10, day=26),
             data_cotizacao=datetime.date(year=2018, month=10, day=27),
             data_liquidacao=datetime.date(year=2018, month=10, day=28),
             cota=decimal.Decimal('1000'),
@@ -2400,7 +2400,7 @@ class BoletaPassivoUnitTests(TestCase):
         # Boleta que faz resgate total
         self.boleta_resgate_total = mommy.make('boletagem.BoletaPassivo',
             cotista=self.cotista,
-            data_movimentacao=datetime.date(year=2018, month=10, day=26),
+            data_operacao=datetime.date(year=2018, month=10, day=26),
             data_cotizacao=datetime.date(year=2018, month=10, day=27),
             data_liquidacao=datetime.date(year=2018, month=10, day=26),
             cota=decimal.Decimal('1000'),
