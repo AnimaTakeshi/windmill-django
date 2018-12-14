@@ -1168,11 +1168,18 @@ class BoletaFundoOffshore(BaseModel):
                     """
                     Transição 2 - Pendente de liquidação e cotização -> Pendente de liquidação.
                     """
+                    """
+                    CPR deve ser negativo quando a operação for de aplicação, e positivo
+                    quando for de resgate
+                    """
                     if self.preco == None:
                         self.clean_preco()
                         self.clean_quantidade()
                     if self.quantidade == None:
-                        self.quantidade = (self.financeiro/self.preco).quantize(decimal.Decimal('1.000000'))
+                        if self.operacao == self.OPERACAO[0][0]:
+                            self.quantidade = abs((self.financeiro/self.preco).quantize(decimal.Decimal('1.000000')))
+                        else:
+                            self.quantidade = -abs((self.financeiro/self.preco).quantize(decimal.Decimal('1.000000')))
                     self.criar_boleta_CPR_liquidacao()
                     self.criar_provisao()
                     self.criar_movimentacao()
@@ -1208,7 +1215,7 @@ class BoletaFundoOffshore(BaseModel):
                 else:
                     financeiro = decimal.Decimal(abs(self.financeiro)).quantize(decimal.Decimal('1.00'))
 
-                boleta = self.boleta_CPR.filter(valor_cheio=-self.financeiro).first()
+                boleta = self.boleta_CPR.filter(valor_cheio=self.financeiro).first()
                 boleta.data_pagamento = data_referencia
                 boleta.save()
                 self.clean_preco()
@@ -1336,9 +1343,9 @@ class BoletaFundoOffshore(BaseModel):
             # data de pagamento
             financeiro = 0
             if self.operacao == self.OPERACAO[0][0]:
-                financeiro = decimal.Decimal(-abs(self.financeiro)).quantize(decimal.Decimal('1.00'))
-            else:
                 financeiro = decimal.Decimal(abs(self.financeiro)).quantize(decimal.Decimal('1.00'))
+            else:
+                financeiro = decimal.Decimal(-abs(self.financeiro)).quantize(decimal.Decimal('1.00'))
             if self.preco == None:
                 if self.data_liquidacao < self.data_cotizacao:
                     cpr = BoletaCPR(
@@ -1395,9 +1402,9 @@ class BoletaFundoOffshore(BaseModel):
         if self.boleta_CPR.all().filter(valor_cheio=-self.financeiro).exists() == False:
             financeiro = 0
             if self.operacao == self.OPERACAO[0][0]:
-                financeiro = decimal.Decimal(abs(self.financeiro)).quantize(decimal.Decimal('1.00'))
-            else:
                 financeiro = decimal.Decimal(-abs(self.financeiro)).quantize(decimal.Decimal('1.00'))
+            else:
+                financeiro = decimal.Decimal(abs(self.financeiro)).quantize(decimal.Decimal('1.00'))
             cpr = BoletaCPR(
                 descricao="Liquidação de " + self.ativo.nome,
                 valor_cheio=financeiro,
@@ -2571,12 +2578,9 @@ class BoletaPassivo(BaseModel):
         """
         if self.boleta_CPR.all().exists() == False:
             financeiro = 0
-            if self.operacao == self.OPERACAO[0][0]:
-                financeiro = -abs(self.valor)
-            else:
-                financeiro = abs(self.valor)
             if (self.operacao == self.OPERACAO[0][0] and self.data_cotizacao < self.data_liquidacao) or \
                 (self.operacao != self.OPERACAO[0][0] and self.data_liquidacao < self.data_cotizacao):
+                financeiro = abs(self.valor)
                 if self.data_cotizacao < self.data_liquidacao:
                     data_inicio = self.data_cotizacao
                     data_pagamento = self.data_liquidacao
@@ -2592,6 +2596,7 @@ class BoletaPassivo(BaseModel):
                     content_object=self
                 )
             else:
+                financeiro = -abs(self.valor)
                 if self.data_cotizacao < self.data_liquidacao:
                     data_inicio = self.data_cotizacao
                     data_pagamento = self.data_liquidacao

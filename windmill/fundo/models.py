@@ -702,7 +702,11 @@ class Fundo(BaseModel):
         import ativos.models as am
         import mercado.models as mm
 
-        configuracao = cm.ConfigCambio.objects.get(fundo=self)
+        configuracao = cm.ConfigCambio.objects.filter(fundo=self)
+        if configuracao.count() == 0:
+            return decimal.Decimal(1)
+        else:
+            configuracao = configuracao[0]
         cambios_padrao = configuracao.cambio.all()
         cambio_usado = None
         for cambio in cambios_padrao:

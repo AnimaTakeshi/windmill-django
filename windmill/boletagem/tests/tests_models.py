@@ -2924,6 +2924,25 @@ class BoletaCPRUnitTests(TestCase):
             - Diária
             - Mensal
         """
+        """
+        Configuracao de cambio
+        """
+        # Moedas
+        real = mommy.make('ativos.moeda',
+            nome='Real Brasileiro',
+            codigo='BRL'
+        )
+        dolar = mommy.make('ativos.moeda',
+            nome='Dólar Americano',
+            codigo='USD'
+        )
+        bmfxclco = mommy.make('ativos.Cambio',
+            nome='BMFXCLCO',
+            bbg_ticker='BMFXCLCO INDEX',
+            moeda_origem=dolar,
+            moeda_destino=real
+        )
+
         Feriado1 = Recipe('calendario.Feriado',
             data=datetime.date(year=2018, month=9, day=20)
         )
@@ -2941,6 +2960,11 @@ class BoletaCPRUnitTests(TestCase):
             calendario=calendario,
             custodia=custodia
         )
+        configuration = mommy.make('configuracao.ConfigCambio',
+            fundo=fundo,
+        )
+        configuration.cambio.add(bmfxclco)
+
         self.boleta_diferimento_parcial_diario = mommy.make('boletagem.BoletaCPR',
             valor_parcial=decimal.Decimal('1.37'), # Valor cheio = (dia_trabalho_total + 1)*valor_parcial
             capitalizacao=bm.BoletaCPR.CAPITALIZACAO[0][0], # Capitalização diária
