@@ -75,14 +75,14 @@ class Preco(BaseModel):
     # é o valor do ajuste diário do final do dia. No caso de fundos de ações,
     # é o valor da cota calculada pelo administrador no dia. No caso de fundos
     # negociados na bolsa, como fundos imobiliários, é o valor de fechamendo.
-    preco_fechamento = models.DecimalField(max_digits=13, decimal_places=6, blank=True, null=True)
+    preco_fechamento = models.DecimalField(max_digits=15, decimal_places=8, blank=True, null=True)
     # Preço contábil da cota do ativo. No caso de fundos imobiliários, é essa
     # a cota calculada pelo administrador.
-    preco_contabil = models.DecimalField(max_digits=13, decimal_places=6, blank=True, null=True)
+    preco_contabil = models.DecimalField(max_digits=15, decimal_places=8, blank=True, null=True)
     # Preço gerencial de um ativo. Informado pelo gestor do fundo.
-    preco_gerencial = models.DecimalField(max_digits=13, decimal_places=6, blank=True, null=True)
+    preco_gerencial = models.DecimalField(max_digits=15, decimal_places=8, blank=True, null=True)
     # Estimativa
-    preco_estimado = models.DecimalField(max_digits=13, decimal_places=6, blank=True, null=True)
+    preco_estimado = models.DecimalField(max_digits=15, decimal_places=8, blank=True, null=True)
 
     class Meta:
         unique_together = (('ativo', 'data_referencia'),)

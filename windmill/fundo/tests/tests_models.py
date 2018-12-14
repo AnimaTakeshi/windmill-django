@@ -7,8 +7,10 @@ from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelatio
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 from django.db import models
+import ativos.models as am
 import boletagem.models as bm
 import fundo.models as fm
+import configuracao.models as cm
 
 class FundoUnitTests(TestCase):
     """
@@ -27,6 +29,15 @@ class FundoUnitTests(TestCase):
             nome='Dólar',
             codigo='USD'
         )
+        euro = mommy.make('ativos.moeda',
+            nome='Euro',
+            codigo='EUR'
+        )
+
+        libra = mommy.make('ativos.moeda',
+            nome='Libra',
+            codigo='GBP'
+        )
         custodia = mommy.make('fundo.Custodiante',
             nome='CIBC'
         )
@@ -39,7 +50,7 @@ class FundoUnitTests(TestCase):
         # Caixa padrão do fundo
         caixa_padrao = mommy.make('ativos.Caixa',
             nome='CIBC',
-            moeda=moeda,
+            moeda=dolar,
             custodia=custodia
         )
         caixa_off = mommy.make('ativos.Caixa',
@@ -55,16 +66,17 @@ class FundoUnitTests(TestCase):
         self.data_carteira3 = datetime.date(year=2018, month=11, day=16)
         # Fundo gerido pela Anima.
         self.fundo = mommy.make("fundo.Fundo",
-            nome='fundo_local_gerido',
+            nome='flg',
             gestora=gestora,
             categoria=fm.Fundo.CATEGORIAS[0][0],
             data_de_inicio=datetime.date(year=2014, month=10, day=27),
             caixa_padrao=caixa_padrao,
+            taxa_adm_minima=decimal.Decimal('3170'),
             custodia=custodia
         )
         # Fundo não gerido
         self.fundo_qualquer = mommy.make("fundo.Fundo",
-            nome='fundo_local_nao_gerido',
+            nome='flng',
             gestora=gestora_qualquer,
             categoria=fm.Fundo.CATEGORIAS[0][0],
             data_de_inicio=datetime.date(year=2017, month=10, day=27),
@@ -72,7 +84,7 @@ class FundoUnitTests(TestCase):
         )
         # Fundo Anima Master, gerido, que investe em outros fundos geridos
         self.fundo_master = mommy.make("fundo.Fundo",
-            nome='fundo_local_master',
+            nome='flm',
             gestora=gestora,
             categoria=fm.Fundo.CATEGORIAS[0][0],
             data_de_inicio=datetime.date(year=2011, month=10, day=27),
@@ -86,58 +98,76 @@ class FundoUnitTests(TestCase):
             fundo_cotista=self.fundo_master
         )
 
+
         """
         Setup de ativos
         """
 
         # Ações
         acao = mommy.make('ativos.acao',
-            nome='ITSA4'
+            nome='ITSA4',
+            moeda=moeda
         )
         SPGI = mommy.make('ativos.acao',
-            nome='SPGI'
+            nome='SPGI',
+            moeda=dolar
         )
         V = mommy.make('ativos.acao',
-            nome='V'
+            nome='V',
+            moeda=dolar
         )
         AMT = mommy.make('ativos.acao',
-            nome='AMT'
+            nome='AMT',
+            moeda=dolar
         )
         ORLY = mommy.make('ativos.acao',
-            nome='ORLY'
+            nome='ORLY',
+            moeda=dolar
         )
         MA = mommy.make('ativos.acao',
-            nome='MA'
+            nome='MA',
+            moeda=dolar
         )
         CDW = mommy.make('ativos.acao',
-            nome='CDW'
+            nome='CDW',
+            moeda=dolar
         )
         LIN = mommy.make('ativos.acao',
-            nome='LIN'
+            nome='LIN',
+            moeda=dolar
         )
         MCO = mommy.make('ativos.acao',
-            nome='MCO'
+            nome='MCO',
+            moeda=dolar
         )
         IMCD = mommy.make('ativos.acao',
-            nome='IMCD'
+            nome='IMCD',
+            moeda=euro
         )
         CHTR = mommy.make('ativos.acao',
-            nome='CHTR'
+            nome='CHTR',
+            moeda=dolar
         )
         RB = mommy.make('ativos.acao',
-            nome='RB/'
+            nome='RB/',
+            moeda=libra
         )
         ABI = mommy.make('ativos.acao',
-            nome='ABI'
+            nome='ABI',
+            moeda=euro
         )
         SBAC = mommy.make('ativos.acao',
-            nome='SBAC'
+            nome='SBAC',
+            moeda=dolar
+
         )
         BKNG = mommy.make('ativos.acao',
-            nome='BKNG'
+            nome='BKNG',
+            moeda=dolar
         )
         KHC = mommy.make('ativos.acao',
-            nome='KHC'
+            nome='KHC',
+            moeda=dolar
         )
 
         # Ativo fundo local gerido.
@@ -159,18 +189,163 @@ class FundoUnitTests(TestCase):
             gestao=self.fundo_qualquer
         )
         # Ativo Fundo off não gerido
-        fundo_off_nao_gerido = mommy.make('ativos.Fundo_Offshore',
+        self.fundo_off_nao_gerido = mommy.make('ativos.Fundo_Offshore',
             nome='fundo_off_nao_gerido',
             data_cotizacao_resgate=datetime.timedelta(days=4),
             data_liquidacao_resgate=datetime.timedelta(days=5),
             data_cotizacao_aplicacao=datetime.timedelta(days=1),
             data_liquidacao_aplicacao=datetime.timedelta(days=0),
-            gestao=self.fundo_qualquer
+            gestao=self.fundo_qualquer,
+            moeda=dolar
         )
+
+        # Câmbio
+        eurusd = mommy.make('ativos.Cambio',
+            nome='eurusd',
+            bbg_ticker='eurusd curncy',
+            moeda_origem=euro,
+            moeda_destino=dolar,
+        )
+
+        eurusd_cmpn = mommy.make('ativos.Cambio',
+            nome='eurusd cmpn',
+            bbg_ticker='eurusd cmpn curncy',
+            moeda_origem=euro,
+            moeda_destino=dolar
+        )
+
+        gbpusd = mommy.make('ativos.Cambio',
+            nome='gbpusd',
+            bbg_ticker='gbpusd curncy',
+            moeda_origem=libra,
+            moeda_destino=dolar
+        )
+
+        bmfxtwo= mommy.make('ativos.Cambio',
+            nome='brlusd',
+            bbg_ticker='brlusd curncy',
+            moeda_origem=moeda,
+            moeda_destino=dolar
+        )
+
+        # Setup de configuração de cambio
+
+        configuration = mommy.make('configuracao.ConfigCambio',
+            fundo=self.fundo,
+        )
+        configuration.cambio.add(eurusd_cmpn)
+        configuration.cambio.add(gbpusd)
+        configuration.cambio.add(bmfxtwo)
 
         """
         Setup de preços
         """
+        # Câmbios
+        mommy.make('mercado.Preco',
+            ativo=eurusd,
+            preco_fechamento=1.25,
+            data_referencia=self.data_fechamento
+        )
+        mommy.make('mercado.Preco',
+            ativo=eurusd,
+            preco_fechamento=1.23,
+            data_referencia=self.data_carteira
+        )
+        mommy.make('mercado.Preco',
+            ativo=eurusd,
+            preco_fechamento=1.22,
+            data_referencia=self.data_carteira1
+        )
+        mommy.make('mercado.Preco',
+            ativo=eurusd,
+            preco_fechamento=1.235,
+            data_referencia=self.data_carteira2
+        )
+        mommy.make('mercado.Preco',
+            ativo=eurusd,
+            preco_fechamento=1.242,
+            data_referencia=self.data_carteira3
+        )
+
+        mommy.make('mercado.Preco',
+            ativo=gbpusd,
+            preco_fechamento=1.5,
+            data_referencia=self.data_fechamento
+        )
+        mommy.make('mercado.Preco',
+            ativo=gbpusd,
+            preco_fechamento=1.6,
+            data_referencia=self.data_carteira
+        )
+        mommy.make('mercado.Preco',
+            ativo=gbpusd,
+            preco_fechamento=1.55,
+            data_referencia=self.data_carteira1
+        )
+        mommy.make('mercado.Preco',
+            ativo=gbpusd,
+            preco_fechamento=1.65,
+            data_referencia=self.data_carteira2
+        )
+        mommy.make('mercado.Preco',
+            ativo=gbpusd,
+            preco_fechamento=1.53,
+            data_referencia=self.data_carteira3
+        )
+
+        mommy.make('mercado.Preco',
+            ativo=bmfxtwo,
+            preco_fechamento=0.30,
+            data_referencia=self.data_fechamento
+        )
+        mommy.make('mercado.Preco',
+            ativo=bmfxtwo,
+            preco_fechamento=0.31,
+            data_referencia=self.data_carteira
+        )
+        mommy.make('mercado.Preco',
+            ativo=bmfxtwo,
+            preco_fechamento=0.29,
+            data_referencia=self.data_carteira1
+        )
+        mommy.make('mercado.Preco',
+            ativo=bmfxtwo,
+            preco_fechamento=0.28,
+            data_referencia=self.data_carteira2
+        )
+        mommy.make('mercado.Preco',
+            ativo=bmfxtwo,
+            preco_fechamento=0.295,
+            data_referencia=self.data_carteira3
+        )
+
+        mommy.make('mercado.Preco',
+            ativo=eurusd_cmpn,
+            preco_fechamento=1.255,
+            data_referencia=self.data_fechamento
+        )
+        mommy.make('mercado.Preco',
+            ativo=eurusd_cmpn,
+            preco_fechamento=1.235,
+            data_referencia=self.data_carteira
+        )
+        mommy.make('mercado.Preco',
+            ativo=eurusd_cmpn,
+            preco_fechamento=1.212,
+            data_referencia=self.data_carteira1
+        )
+        mommy.make('mercado.Preco',
+            ativo=eurusd_cmpn,
+            preco_fechamento=1.2354,
+            data_referencia=self.data_carteira2
+        )
+        mommy.make('mercado.Preco',
+            ativo=eurusd_cmpn,
+            preco_fechamento=1.42,
+            data_referencia=self.data_carteira3
+        )
+
+        # Ações
         mommy.make('mercado.Preco',
             ativo=acao,
             preco_fechamento=11,
@@ -248,7 +423,6 @@ class FundoUnitTests(TestCase):
             preco_fechamento=140.18,
             data_referencia=self.data_carteira3
         )
-
         mommy.make('mercado.Preco',
             ativo=AMT,
             preco_fechamento=161.03,
@@ -580,12 +754,6 @@ class FundoUnitTests(TestCase):
         )
 
         mommy.make('mercado.Preco',
-            ativo=fundo_off_nao_gerido,
-            preco_fechamento=1000,
-            data_referencia=self.data_fechamento
-        )
-
-        mommy.make('mercado.Preco',
             ativo=caixa_off,
             preco_fechamento=1,
             data_referencia=self.data_fechamento
@@ -664,7 +832,7 @@ class FundoUnitTests(TestCase):
             preco=decimal.Decimal('2000')
         )
         boleta_fundo_offshore = mommy.make('boletagem.BoletaFundoOffshore',
-            ativo=fundo_off_nao_gerido,
+            ativo=self.fundo_off_nao_gerido,
             data_operacao=self.data_fechamento,
             data_cotizacao=datetime.date(year=2018, month=11, day=13),
             data_liquidacao=datetime.date(year=2018, month=11, day=12),
@@ -714,7 +882,8 @@ class FundoUnitTests(TestCase):
             data_vigencia_inicio=datetime.date(year=2018, month=9, day=17), # última data_referencia em que o CPR fica com seu valor cheio. Após esta data, o valor deve começar a converter para 0
             data_vigencia_fim=datetime.date(year=2018, month=10, day=17), # última data em que o CPR possui algum valor que, nesta data, deve ser igual ao valor parcial
             data_pagamento=datetime.date(year=2018, month=12, day=18), # Não faz sentido ser mais que um dia após o término da vigência, pois o valor fica zerado após a vigência.
-            fundo=self.fundo
+            fundo=self.fundo,
+            descricao="CPR TESTE"
         )
 
         # Boleta Ação para ser fechada e criar vértices.
@@ -1098,21 +1267,1542 @@ class FundoUnitTests(TestCase):
             self.assertTrue(boleta.relacao_quantidade.exists())
             self.assertTrue(boleta.relacao_movimentacao.exists())
 
+    # def test_juntar_quantidades(self):
+    #     self.fundo.fechar_boletas_do_fundo(self.data_fechamento)
+    #     self.fundo.criar_vertices(self.data_fechamento)
+    #     self.fundo.consolidar_vertices(self.data_fechamento)
+    #
+    #     self.fundo.fechar_boletas_do_fundo(self.data_carteira)
+    #     self.fundo.criar_vertices(self.data_carteira)
+    #     self.fundo.consolidar_vertices(self.data_carteira)
+    #
+    #     mommy.make('mercado.Preco',
+    #         ativo=self.fundo_off_nao_gerido,
+    #         preco_fechamento=1300,
+    #         data_referencia=self.data_carteira
+    #     )
+    #
+    #     self.fundo.fechar_boletas_do_fundo(self.data_carteira1)
+    #     self.fundo.criar_vertices(self.data_carteira1)
+    #     self.fundo.consolidar_vertices(self.data_carteira1)
+    #
+    #     self.fundo.fechar_boletas_do_fundo(self.data_carteira2)
+    #     self.fundo.criar_vertices(self.data_carteira2)
+    #     #
+    #     # self.fundo.fechar_boletas_do_fundo(self.data_carteira3)
+    #     # self.fundo.criar_vertices(self.data_carteira3)
+    #
+    #     # self.assertTrue(False)
+    #     self.assertTrue(fm.Vertice.objects.filter(fundo=self.fundo, data=self.data_carteira).exists())
+
+
+class VeredaTests(TestCase):
+    def setUp(self):
+
+        self.data_carteira = datetime.date(day=23, month=11, year=2018)
+
+        """
+        Configurando moedas e países
+        """
+        # Moedas
+        real = mommy.make('ativos.moeda',
+            nome='Real Brasileiro',
+            codigo='BRL'
+        )
+        dolar = mommy.make('ativos.moeda',
+            nome='Dólar Americano',
+            codigo='USD'
+        )
+        euro = mommy.make('ativos.moeda',
+            nome='Euro',
+            codigo='EUR'
+        )
+        libra = mommy.make('ativos.moeda',
+            nome='Libra',
+            codigo='GBP'
+        )
+        # Países
+        brasil = mommy.make('ativos.pais',
+            nome='Brasil',
+            moeda=real
+        )
+        eua = mommy.make('ativos.pais',
+            nome='Estados Unidos',
+            moeda=dolar
+        )
+        holanda = mommy.make('ativos.pais',
+            nome='Holanda',
+            moeda=euro
+        )
+        uk = mommy.make('ativos.pais',
+            nome='Reino Unido',
+            moeda=libra
+        )
+        alemanha = mommy.make('ativos.pais',
+            nome='Alemanha',
+            moeda=euro
+        )
+
+        # CALENDARIO
+        sp_state = mommy.make('calendario.estado',
+            nome="São Paulo",
+            pais=brasil
+        )
+        sp_city = mommy.make('calendario.cidade',
+            nome='São Paulo',
+            estado=sp_state
+        )
+
+        # Feriados
+        dia1 = mommy.make('calendario.feriado',
+            pais=brasil,
+            cidade=sp_city,
+            estado=sp_state,
+            data=datetime.date(day=7, month=9, year=2018)
+        )
+        dia2 = mommy.make('calendario.feriado',
+            pais=brasil,
+            cidade=sp_city,
+            estado=sp_state,
+            data=datetime.date(day=12, month=10, year=2018)
+        )
+        dia3 = mommy.make('calendario.feriado',
+            pais=brasil,
+            cidade=sp_city,
+            estado=sp_state,
+            data=datetime.date(day=2, month=11, year=2018)
+        )
+        dia4 = mommy.make('calendario.feriado',
+            pais=brasil,
+            cidade=sp_city,
+            estado=sp_state,
+            data=datetime.date(day=15, month=11, year=2018)
+        )
+        dia5 = mommy.make('calendario.feriado',
+            pais=brasil,
+            cidade=sp_city,
+            estado=sp_state,
+            data=datetime.date(day=25, month=12, year=2018)
+        )
+
+        calendario = mommy.make('calendario.calendario',
+            pais=brasil,
+            estado=sp_state,
+            cidade=sp_city
+        )
+        calendario.feriados.add(dia1)
+        calendario.feriados.add(dia2)
+        calendario.feriados.add(dia3)
+        calendario.feriados.add(dia4)
+        calendario.feriados.add(dia5)
+
+        # FUNDO
+        # Administradora
+        btg_adm = mommy.make('fundo.administradora',
+            nome='BTG'
+        )
+        maitland = mommy.make('fundo.administradora',
+            nome='Maitland'
+        )
+
+        # Custodiante
+        btg_cust = mommy.make('fundo.custodiante',
+            nome='BTG'
+        )
+        itau_cust = mommy.make('fundo.custodiante',
+            nome='Itaú'
+        )
+        persh_cust = mommy.make('fundo.custodiante',
+            nome="Pershing"
+        )
+        cibc_cust = mommy.make('fundo.custodiante',
+            nome='CIBC'
+        )
+        mait_cust = mommy.make('fundo.Custodiante',
+            nome='Maitland'
+        )
+
+        # Corretora
+        bbdc_corr = mommy.make('fundo.Corretora',
+            nome='Bradesco'
+        )
+        jeff_corr = mommy.make('fundo.Corretora',
+            nome='Jefferies'
+        )
+        cibc_corr = mommy.make('fundo.Corretora',
+            nome='CIBC'
+        )
+        btg_corr = mommy.make('fundo.Corretora',
+            nome='BTG'
+        )
+        xp_corr = mommy.make('fundo.Corretora',
+            nome='XP'
+        )
+
+        # Gestora
+        anima = mommy.make('fundo.gestora',
+            nome='Anima',
+            anima=True
+        )
+        pragma = mommy.make('fundo.gestora',
+            nome='Pragma',
+            anima=False
+        )
+
+        # Caixa
+        btg_cash = mommy.make('ativos.caixa',
+            nome='Caixa BTG',
+            pais=brasil,
+            moeda=real,
+            custodia=btg_cust,
+            corretora=btg_corr
+        )
+        jeff_cash = mommy.make('ativos.caixa',
+            nome='Caixa Jefferies',
+            pais=eua,
+            moeda=dolar,
+            custodia=persh_cust,
+            corretora=jeff_corr
+        )
+        cibc_cash = mommy.make('ativos.caixa',
+            nome='Caixa CIBC',
+            pais=eua,
+            moeda=dolar,
+            custodia=cibc_cust,
+            corretora=cibc_corr
+        )
+
+        # Fundo
+        self.veredas = mommy.make('fundo.fundo',
+            nome='Veredas',
+            administradora=btg_adm,
+            gestora=anima,
+            categoria=fm.Fundo.CATEGORIAS[0][0],
+            data_de_inicio=datetime.date(day=27,month=10,year=2014),
+            pais=brasil,
+            custodia=btg_cust,
+            taxa_administracao=decimal.Decimal('0.06'),
+            taxa_adm_minima=decimal.Decimal('3170'),
+            capitalizacao_taxa_adm=fm.Fundo.CAPITALIZACAO[0][0],
+            caixa_padrao=btg_cash,
+            calendario=calendario
+        )
+        atena = mommy.make('fundo.fundo',
+            nome='Atena',
+            administradora=btg_adm,
+            gestora=anima,
+            categoria=fm.Fundo.CATEGORIAS[0][0],
+            data_de_inicio=datetime.date(day=31,month=12,year=2011),
+            pais=brasil,
+            taxa_administracao=decimal.Decimal('0.06'),
+            capitalizacao_taxa_adm=fm.Fundo.CAPITALIZACAO[0][0],
+            caixa_padrao=btg_cash,
+        )
+
+        rocas = mommy.make('fundo.fundo',
+            nome='Rocas',
+            administradora=maitland,
+            gestora=anima,
+            categoria=fm.Fundo.CATEGORIAS[0][0],
+            data_de_inicio=datetime.date(day=21,month=6,year=2018),
+            pais=eua,
+            taxa_administracao=decimal.Decimal('0.05'),
+            capitalizacao_taxa_adm=fm.Fundo.CAPITALIZACAO[1][0],
+            caixa_padrao=cibc_cash,
+        )
+
+        # Cotista
+        atena_cotista = mommy.make('fundo.Cotista',
+            nome='ATENA',
+            cota_media=decimal.Decimal(1884.0957132),
+            fundo_cotista=atena
+        )
+
+        # ATIVOS
+        # Ação
+        ABEV = mommy.make('ativos.Acao',
+            nome='ABEV3',
+            bbg_ticker='ABEV3 BZ EQUITY',
+            pais=brasil,
+            moeda=real
+        )
+        ITSA = mommy.make('ativos.Acao',
+            nome='ITSA4',
+            bbg_ticker='ITSA4 BZ EQUITY',
+            pais=brasil,
+            moeda=real
+        )
+        ITUB = mommy.make('ativos.Acao',
+            nome='ITUB4',
+            bbg_ticker='ITUB4 BZ EQUITY',
+            pais=brasil,
+            moeda=real
+        )
+        LAME = mommy.make('ativos.Acao',
+            nome='LAME3',
+            bbg_ticker='LAME3 BZ EQUITY',
+            pais=brasil,
+            moeda=real
+        )
+        LREN = mommy.make('ativos.Acao',
+            nome='LREN3',
+            bbg_ticker='LREN3 BZ EQUITY',
+            pais=brasil,
+            moeda=real
+        )
+        NATU = mommy.make('ativos.Acao',
+            nome='NATU3',
+            bbg_ticker='NATU3 BZ EQUITY',
+            pais=brasil,
+            moeda=real
+        )
+        RADL = mommy.make('ativos.Acao',
+            nome='RADL3',
+            bbg_ticker='RADL3 BZ EQUITY',
+            pais=brasil,
+            moeda=real
+        )
+        UGPA = mommy.make('ativos.Acao',
+            nome='UGPA3',
+            bbg_ticker='UGPA3 BZ EQUITY',
+            pais=brasil,
+            moeda=real
+        )
+        WEGE = mommy.make('ativos.Acao',
+            nome='WEGE',
+            bbg_ticker='WEGE BZ EQUITY',
+            pais=brasil,
+            moeda=real
+        )
+
+        # Renda fixa
+        lft20240901 = mommy.make('ativos.Renda_Fixa',
+            nome='LFT 20240901',
+            pais=brasil,
+            moeda=real,
+            vencimento=datetime.date(day=1,month=9,year=2024),
+            cupom=decimal.Decimal('0'),
+            periodo=decimal.Decimal('0'),
+            info=am.Renda_Fixa.TIPO_INFO_CHOICES[0][0]
+        )
+        lft20240301 = mommy.make('ativos.Renda_Fixa',
+            nome='LFT 20240301',
+            pais=brasil,
+            moeda=real,
+            vencimento=datetime.date(day=1,month=3,year=2024),
+            cupom=decimal.Decimal('0'),
+            periodo=decimal.Decimal('0'),
+            info=am.Renda_Fixa.TIPO_INFO_CHOICES[0][0]
+        )
+        lft20230901 = mommy.make('ativos.Renda_Fixa',
+            nome='LFT 20230901',
+            pais=brasil,
+            moeda=real,
+            vencimento=datetime.date(day=1,month=9,year=2023),
+            cupom=decimal.Decimal('0'),
+            periodo=decimal.Decimal('0'),
+            info=am.Renda_Fixa.TIPO_INFO_CHOICES[0][0]
+        )
+        tbill20181129 = mommy.make('ativos.Renda_Fixa',
+            nome='T-BILL 20181129',
+            pais=eua,
+            moeda=dolar,
+            vencimento=datetime.date(day=29,month=11,year=2018),
+            cupom=decimal.Decimal('0'),
+            periodo=decimal.Decimal('0'),
+            info=am.Renda_Fixa.TIPO_INFO_CHOICES[1][0]
+        )
+        tbill20190110 = mommy.make('ativos.Renda_Fixa',
+            nome='T-BILL 20190110',
+            pais=eua,
+            moeda=dolar,
+            vencimento=datetime.date(day=10,month=1,year=2019),
+            cupom=decimal.Decimal('0'),
+            periodo=decimal.Decimal('0'),
+            info=am.Renda_Fixa.TIPO_INFO_CHOICES[1][0]
+        )
+        bmfxclco = mommy.make('ativos.Cambio',
+            nome='BMFXCLCO',
+            bbg_ticker='BMFXCLCO INDEX',
+            moeda_origem=dolar,
+            moeda_destino=real
+        )
+        # Fundos locais
+        honor = mommy.make('ativos.Fundo_Local',
+            nome='HONOR MASTER',
+            bbg_ticker='HONMSTR BZ EQUITY',
+            moeda=real,
+            pais=brasil,
+            data_cotizacao_resgate=datetime.timedelta(days=1),
+            data_liquidacao_resgate=datetime.timedelta(days=4),
+            data_cotizacao_aplicacao=datetime.timedelta(days=1),
+            data_liquidacao_aplicacao=datetime.timedelta(days=0),
+        )
+        soberano = mommy.make('ativos.Fundo_Local',
+            nome='SOBERANO',
+            bbg_ticker='ITAUSOB BZ EQUITY',
+            moeda=real,
+            pais=brasil,
+            data_cotizacao_resgate=datetime.timedelta(days=0),
+            data_liquidacao_resgate=datetime.timedelta(days=0),
+            data_cotizacao_aplicacao=datetime.timedelta(days=0),
+            data_liquidacao_aplicacao=datetime.timedelta(days=0),
+        )
+        # Fundos off
+        rocas_ativo = mommy.make('ativos.Fundo_Offshore',
+            nome='ROCAS LIMITED',
+            gestao=rocas,
+            moeda=dolar,
+            pais=eua
+        )
+
+        """
+        Configuracao de cambio
+        """
+
+        configuration = mommy.make('configuracao.ConfigCambio',
+            fundo=self.veredas,
+        )
+        configuration.cambio.add(bmfxclco)
+
+        """
+        Preços de mercado
+        """
+        mommy.make('mercado.Preco',
+            ativo=ABEV,
+            preco_fechamento=decimal.Decimal(16.2).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira
+        )
+        mommy.make('mercado.Preco',
+            ativo=ITSA,
+            preco_fechamento=decimal.Decimal(11.86).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira
+        )
+        mommy.make('mercado.Preco',
+            ativo=ITUB,
+            preco_fechamento=decimal.Decimal(34.57).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira
+        )
+        mommy.make('mercado.Preco',
+            ativo=LAME,
+            preco_fechamento=decimal.Decimal(13.65).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira
+        )
+        mommy.make('mercado.Preco',
+            ativo=LREN,
+            preco_fechamento=decimal.Decimal(39.23).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira
+        )
+        mommy.make('mercado.Preco',
+            ativo=NATU,
+            preco_fechamento=decimal.Decimal(38.42).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira
+        )
+        mommy.make('mercado.Preco',
+            ativo=RADL,
+            preco_fechamento=decimal.Decimal(62.71).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira
+        )
+        mommy.make('mercado.Preco',
+            ativo=UGPA,
+            preco_fechamento=decimal.Decimal(45.6).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira
+        )
+        mommy.make('mercado.Preco',
+            ativo=WEGE,
+            preco_fechamento=decimal.Decimal(17.68).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira
+        )
+        mommy.make('mercado.Preco',
+            ativo=lft20230901,
+            preco_fechamento=decimal.Decimal(9813.007311).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira
+        )
+        mommy.make('mercado.Preco',
+            ativo=lft20240301,
+            preco_fechamento=decimal.Decimal(9810.513074).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira
+        )
+        mommy.make('mercado.Preco',
+            ativo=lft20240901,
+            preco_fechamento=decimal.Decimal(9808.932081).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira
+        )
+        mommy.make('mercado.Preco',
+            ativo=tbill20181129,
+            preco_fechamento=decimal.Decimal(0.999649).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira
+        )
+        mommy.make('mercado.Preco',
+            ativo=tbill20190110,
+            preco_fechamento=decimal.Decimal(0.996538).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira
+        )
+        mommy.make('mercado.Preco',
+            ativo=honor,
+            preco_fechamento=decimal.Decimal(26.2372346).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira
+        )
+        mommy.make('mercado.Preco',
+            ativo=soberano,
+            preco_fechamento=decimal.Decimal(44.746354).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira
+        )
+        mommy.make('mercado.Preco',
+            ativo=bmfxclco,
+            preco_fechamento=decimal.Decimal(3.8181).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira
+        )
+        mommy.make('mercado.Preco',
+            ativo=rocas_ativo,
+            preco_fechamento=decimal.Decimal(992.733).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira
+        )
+
+        self.data_carteira_1 = datetime.date(day=26,month=11,year=2018)
+
+        mommy.make('mercado.Preco',
+            ativo=ABEV,
+            preco_fechamento=decimal.Decimal(16.15).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_1
+        )
+        mommy.make('mercado.Preco',
+            ativo=ITSA,
+            preco_fechamento=decimal.Decimal(11.64).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_1
+        )
+        mommy.make('mercado.Preco',
+            ativo=ITUB,
+            preco_fechamento=decimal.Decimal(34).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_1
+        )
+        mommy.make('mercado.Preco',
+            ativo=LAME,
+            preco_fechamento=decimal.Decimal(13.41).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_1
+        )
+        mommy.make('mercado.Preco',
+            ativo=LREN,
+            preco_fechamento=decimal.Decimal(38.03).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_1
+        )
+        mommy.make('mercado.Preco',
+            ativo=NATU,
+            preco_fechamento=decimal.Decimal(38.53).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_1
+        )
+        mommy.make('mercado.Preco',
+            ativo=RADL,
+            preco_fechamento=decimal.Decimal(62.17).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_1
+        )
+        mommy.make('mercado.Preco',
+            ativo=UGPA,
+            preco_fechamento=decimal.Decimal(45.25).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_1
+        )
+        mommy.make('mercado.Preco',
+            ativo=WEGE,
+            preco_fechamento=decimal.Decimal(17.74).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_1
+        )
+        mommy.make('mercado.Preco',
+            ativo=lft20230901,
+            preco_fechamento=decimal.Decimal(9815.472385).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_1
+        )
+        mommy.make('mercado.Preco',
+            ativo=lft20240301,
+            preco_fechamento=decimal.Decimal(9812.928422).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_1
+        )
+        mommy.make('mercado.Preco',
+            ativo=lft20240901,
+            preco_fechamento=decimal.Decimal(9811.238996).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_1
+        )
+        mommy.make('mercado.Preco',
+            ativo=tbill20181129,
+            preco_fechamento=decimal.Decimal(0.999826).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_1
+        )
+        mommy.make('mercado.Preco',
+            ativo=tbill20190110,
+            preco_fechamento=decimal.Decimal(0.996737).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_1
+        )
+        mommy.make('mercado.Preco',
+            ativo=honor,
+            preco_fechamento=decimal.Decimal(26.0931743).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_1
+        )
+        mommy.make('mercado.Preco',
+            ativo=soberano,
+            preco_fechamento=decimal.Decimal(44.757101).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_1
+        )
+        mommy.make('mercado.Preco',
+            ativo=bmfxclco,
+            preco_fechamento=decimal.Decimal(3.9062).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_1
+        )
+
+        self.data_carteira_2 = datetime.date(day=27,month=11,year=2018)
+
+        mommy.make('mercado.Preco',
+            ativo=ABEV,
+            preco_fechamento=decimal.Decimal(16.54).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_2
+        )
+        mommy.make('mercado.Preco',
+            ativo=ITSA,
+            preco_fechamento=decimal.Decimal(12.09).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_2
+        )
+        mommy.make('mercado.Preco',
+            ativo=ITUB,
+            preco_fechamento=decimal.Decimal(35.15).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_2
+        )
+        mommy.make('mercado.Preco',
+            ativo=LAME,
+            preco_fechamento=decimal.Decimal(13.72).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_2
+        )
+        mommy.make('mercado.Preco',
+            ativo=LREN,
+            preco_fechamento=decimal.Decimal(39.49).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_2
+        )
+        mommy.make('mercado.Preco',
+            ativo=NATU,
+            preco_fechamento=decimal.Decimal(38.25).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_2
+        )
+        mommy.make('mercado.Preco',
+            ativo=RADL,
+            preco_fechamento=decimal.Decimal(62.8).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_2
+        )
+        mommy.make('mercado.Preco',
+            ativo=UGPA,
+            preco_fechamento=decimal.Decimal(46.1).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_2
+        )
+        mommy.make('mercado.Preco',
+            ativo=WEGE,
+            preco_fechamento=decimal.Decimal(18.05).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_2
+        )
+        mommy.make('mercado.Preco',
+            ativo=lft20230901,
+            preco_fechamento=decimal.Decimal(9817.888955).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_2
+        )
+        mommy.make('mercado.Preco',
+            ativo=lft20240301,
+            preco_fechamento=decimal.Decimal(9815.35419).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_2
+        )
+        mommy.make('mercado.Preco',
+            ativo=lft20240901,
+            preco_fechamento=decimal.Decimal(9813.713471).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_2
+        )
+        mommy.make('mercado.Preco',
+            ativo=tbill20181129,
+            preco_fechamento=decimal.Decimal(0.999883).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_2
+        )
+        mommy.make('mercado.Preco',
+            ativo=tbill20190110,
+            preco_fechamento=decimal.Decimal(0.996809).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_2
+        )
+        mommy.make('mercado.Preco',
+            ativo=honor,
+            preco_fechamento=decimal.Decimal(26.6569745).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_2
+        )
+        mommy.make('mercado.Preco',
+            ativo=soberano,
+            preco_fechamento=decimal.Decimal(44.767854).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_2
+        )
+        mommy.make('mercado.Preco',
+            ativo=bmfxclco,
+            preco_fechamento=decimal.Decimal(3.8947).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_2
+        )
+
+        """
+        Boletas de ativos
+        """
+        # Boleta Aporte
+        boleta_passivo = mommy.make('boletagem.BoletaPassivo',
+            cotista=atena_cotista,
+            valor=decimal.Decimal(860178738.36).quantize(decimal.Decimal('1.00')),
+            data_operacao=self.data_carteira,
+            data_cotizacao=self.data_carteira,
+            data_liquidacao=self.data_carteira,
+            operacao=bm.BoletaPassivo.OPERACAO[0][0],
+            fundo=self.veredas,
+            cota=1882.05526286,
+        )
+
+        # Boletas ações
+        boleta_ABEV = mommy.make('boletagem.BoletaAcao',
+            acao=ABEV,
+            data_operacao=self.data_carteira,
+            data_liquidacao=self.data_carteira,
+            custodia=btg_cust,
+            corretora=bbdc_corr,
+            operacao=bm.BoletaAcao.OPERACAO[0][0],
+            fundo=self.veredas,
+            quantidade=745300,
+            preco=decimal.Decimal(16.2).quantize(decimal.Decimal('1.00')),
+            caixa_alvo=self.veredas.caixa_padrao
+        )
+        boleta_ITSA = mommy.make('boletagem.BoletaAcao',
+            acao=ITSA,
+            data_operacao=self.data_carteira,
+            data_liquidacao=self.data_carteira,
+            custodia=btg_cust,
+            corretora=bbdc_corr,
+            operacao=bm.BoletaAcao.OPERACAO[0][0],
+            fundo=self.veredas,
+            quantidade=188124,
+            preco=decimal.Decimal(11.86).quantize(decimal.Decimal('1.00')),
+            caixa_alvo=self.veredas.caixa_padrao
+        )
+        boleta_ITUB = mommy.make('boletagem.BoletaAcao',
+            acao=ITUB,
+            data_operacao=self.data_carteira,
+            data_liquidacao=self.data_carteira,
+            custodia=btg_cust,
+            corretora=bbdc_corr,
+            operacao=bm.BoletaAcao.OPERACAO[0][0],
+            fundo=self.veredas,
+            quantidade=186495,
+            preco=decimal.Decimal(34.57).quantize(decimal.Decimal('1.00')),
+            caixa_alvo=self.veredas.caixa_padrao
+        )
+        boleta_LAME = mommy.make('boletagem.BoletaAcao',
+            acao=LAME,
+            data_operacao=self.data_carteira,
+            data_liquidacao=self.data_carteira,
+            custodia=btg_cust,
+            corretora=bbdc_corr,
+            operacao=bm.BoletaAcao.OPERACAO[0][0],
+            fundo=self.veredas,
+            quantidade=610560,
+            preco=decimal.Decimal(13.65).quantize(decimal.Decimal('1.00')),
+            caixa_alvo=self.veredas.caixa_padrao
+        )
+        boleta_LREN = mommy.make('boletagem.BoletaAcao',
+            acao=LREN,
+            data_operacao=self.data_carteira,
+            data_liquidacao=self.data_carteira,
+            custodia=btg_cust,
+            corretora=bbdc_corr,
+            operacao=bm.BoletaAcao.OPERACAO[0][0],
+            fundo=self.veredas,
+            quantidade=247630,
+            preco=decimal.Decimal(39.23).quantize(decimal.Decimal('1.00')),
+            caixa_alvo=self.veredas.caixa_padrao
+        )
+        boleta_NATU = mommy.make('boletagem.BoletaAcao',
+            acao=NATU,
+            data_operacao=self.data_carteira,
+            data_liquidacao=self.data_carteira,
+            custodia=itau_cust,
+            corretora=bbdc_corr,
+            operacao=bm.BoletaAcao.OPERACAO[0][0],
+            fundo=self.veredas,
+            quantidade=10320689,
+            preco=decimal.Decimal(38.42).quantize(decimal.Decimal('1.00')),
+            caixa_alvo=self.veredas.caixa_padrao
+        )
+        boleta_RADL = mommy.make('boletagem.BoletaAcao',
+            acao=RADL,
+            data_operacao=self.data_carteira,
+            data_liquidacao=self.data_carteira,
+            custodia=itau_cust,
+            corretora=bbdc_corr,
+            operacao=bm.BoletaAcao.OPERACAO[0][0],
+            fundo=self.veredas,
+            quantidade=1880655,
+            preco=decimal.Decimal(62.71).quantize(decimal.Decimal('1.00')),
+            caixa_alvo=self.veredas.caixa_padrao
+        )
+        boleta_UGPA = mommy.make('boletagem.BoletaAcao',
+            acao=UGPA,
+            data_operacao=self.data_carteira,
+            data_liquidacao=self.data_carteira,
+            custodia=btg_cust,
+            corretora=bbdc_corr,
+            operacao=bm.BoletaAcao.OPERACAO[0][0],
+            fundo=self.veredas,
+            quantidade=152800,
+            preco=decimal.Decimal(45.6).quantize(decimal.Decimal('1.00')),
+            caixa_alvo=self.veredas.caixa_padrao
+        )
+        boleta_WEGE = mommy.make('boletagem.BoletaAcao',
+            acao=WEGE,
+            data_operacao=self.data_carteira,
+            data_liquidacao=self.data_carteira,
+            custodia=btg_cust,
+            corretora=bbdc_corr,
+            operacao=bm.BoletaAcao.OPERACAO[0][0],
+            fundo=self.veredas,
+            quantidade=393138,
+            preco=decimal.Decimal(17.68).quantize(decimal.Decimal('1.00')),
+            caixa_alvo=self.veredas.caixa_padrao
+        )
+
+        # Boletas Renda Fixa
+        boleta_LFT20240901 = mommy.make('boletagem.BoletaRendaFixaLocal',
+            ativo=lft20240901,
+            data_operacao=self.data_carteira,
+            data_liquidacao=self.data_carteira,
+            corretora=xp_corr,
+            custodia=btg_cust,
+            fundo=self.veredas,
+            operacao=bm.BoletaRendaFixaLocal.OPERACAO[0][0],
+            quantidade=1050,
+            preco=decimal.Decimal(9808.932081).quantize(decimal.Decimal('1.000000')),
+            taxa=decimal.Decimal(0.0025).quantize(decimal.Decimal('1.000000')),
+            corretagem=0,
+            caixa_alvo=self.veredas.caixa_padrao
+        )
+        boleta_LFT20240301 = mommy.make('boletagem.BoletaRendaFixaLocal',
+            ativo=lft20240301,
+            data_operacao=self.data_carteira,
+            data_liquidacao=self.data_carteira,
+            corretora=xp_corr,
+            custodia=btg_cust,
+            fundo=self.veredas,
+            operacao=bm.BoletaRendaFixaLocal.OPERACAO[0][0],
+            quantidade=601,
+            preco=decimal.Decimal(9810.513074).quantize(decimal.Decimal('1.000000')),
+            taxa=decimal.Decimal(0.0025).quantize(decimal.Decimal('1.000000')),
+            corretagem=0,
+            caixa_alvo=self.veredas.caixa_padrao
+        )
+        boleta_LFT20230901 = mommy.make('boletagem.BoletaRendaFixaLocal',
+            ativo=lft20230901,
+            data_operacao=self.data_carteira,
+            data_liquidacao=self.data_carteira,
+            corretora=xp_corr,
+            custodia=btg_cust,
+            fundo=self.veredas,
+            operacao=bm.BoletaRendaFixaLocal.OPERACAO[0][0],
+            quantidade=1964,
+            preco=decimal.Decimal(9813.007311).quantize(decimal.Decimal('1.000000')),
+            taxa=decimal.Decimal(0.0025).quantize(decimal.Decimal('1.000000')),
+            corretagem=0,
+            caixa_alvo=self.veredas.caixa_padrao
+        )
+
+        # Boletas Fundos locais
+        boleta_Honor = mommy.make('boletagem.BoletaFundoLocal',
+            ativo=honor,
+            data_operacao=self.data_carteira,
+            data_cotizacao=self.data_carteira,
+            data_liquidacao=self.data_carteira,
+            fundo=self.veredas,
+            operacao=bm.BoletaFundoLocal.OPERACAO[0][0],
+            liquidacao=bm.BoletaFundoLocal.TIPO_LIQUIDACAO[1][0],
+            financeiro=decimal.Decimal(38472592.35).quantize(decimal.Decimal('1.00')),
+            quantidade=decimal.Decimal(1466335.64628).quantize(decimal.Decimal('1.00000')),
+            preco=decimal.Decimal(26.237235).quantize(decimal.Decimal('1.000000')),
+            caixa_alvo=self.veredas.caixa_padrao,
+            custodia=itau_cust
+        )
+        boleta_Soberano = mommy.make('boletagem.BoletaFundoLocal',
+            ativo=soberano,
+            data_operacao=self.data_carteira,
+            data_cotizacao=self.data_carteira,
+            data_liquidacao=self.data_carteira,
+            fundo=self.veredas,
+            operacao=bm.BoletaFundoLocal.OPERACAO[0][0],
+            liquidacao=bm.BoletaFundoLocal.TIPO_LIQUIDACAO[1][0],
+            financeiro=decimal.Decimal(254478.18).quantize(decimal.Decimal('1.00')),
+            quantidade=decimal.Decimal(5687.126596).quantize(decimal.Decimal('1.000000')),
+            preco=decimal.Decimal(44.746354).quantize(decimal.Decimal('1.000000')),
+            caixa_alvo=self.veredas.caixa_padrao,
+            custodia=itau_cust
+        )
+
+        # Boleta Câmbio
+        boleta_cambio = mommy.make('boletagem.BoletaCambio',
+            cambio=decimal.Decimal('3.8181'),
+            fundo=self.veredas,
+            caixa_origem=self.veredas.caixa_padrao,
+            caixa_destino=jeff_cash,
+            financeiro_origem=decimal.Decimal('218777210.82'),
+            financeiro_final=decimal.Decimal('57300021.17'),
+            data_operacao=self.data_carteira,
+            data_liquidacao_origem=self.data_carteira,
+            data_liquidacao_destino=self.data_carteira
+        )
+
+        # Boleta fundo Off
+        boleta_Rocas = mommy.make('boletagem.BoletaFundoOffshore',
+            ativo=rocas_ativo,
+            estado=bm.BoletaFundoOffshore.ESTADO[4][0],
+            data_operacao=self.data_carteira,
+            data_cotizacao=self.data_carteira,
+            data_liquidacao=self.data_carteira,
+            fundo=self.veredas,
+            financeiro=decimal.Decimal(22812938.82).quantize(decimal.Decimal('1.00')),
+            preco=decimal.Decimal(992.733).quantize(decimal.Decimal('1.000')),
+            quantidade=decimal.Decimal(22979.934).quantize(decimal.Decimal('1.000')),
+            operacao=bm.BoletaFundoOffshore.OPERACAO[0][0],
+            caixa_alvo=jeff_cash,
+            custodia=mait_cust,
+        )
+
+        # Boleta Renda Fixa Off
+        boleta_TBILL2018 = mommy.make('boletagem.BoletaRendaFixaOffshore',
+            ativo=tbill20181129,
+            data_operacao=self.data_carteira,
+            data_liquidacao=self.data_carteira,
+            corretora=jeff_corr,
+            custodia=persh_cust,
+            corretagem=0,
+            fundo=self.veredas,
+            operacao=bm.BoletaRendaFixaOffshore.OPERACAO[0][0],
+            quantidade=4540000,
+            preco=0.999649,
+            caixa_alvo=jeff_cash,
+        )
+        boleta_TBILL2019 = mommy.make('boletagem.BoletaRendaFixaOffshore',
+            ativo=tbill20190110,
+            data_operacao=self.data_carteira,
+            data_liquidacao=self.data_carteira,
+            corretora=jeff_corr,
+            custodia=persh_cust,
+            corretagem=0,
+            fundo=self.veredas,
+            operacao=bm.BoletaRendaFixaOffshore.OPERACAO[0][0],
+            quantidade=30000000,
+            preco=0.996538,
+            caixa_alvo=jeff_cash,
+        )
+        boleta_CPR_Anbima = mommy.make('boletagem.BoletaCPR',
+            descricao="Despesa Anbima 10.2018 - DIFERIMENTO",
+            fundo=self.veredas,
+            valor_cheio=decimal.Decimal(1047).quantize(decimal.Decimal('1.00')),
+            data_inicio=datetime.date(day=26, month=10, year=2018),
+            data_vigencia_inicio=datetime.date(day=26, month=10, year=2018),
+            data_vigencia_fim=datetime.date(day=26, month=12, year=2018),
+            data_pagamento=datetime.date(day=26, month=12, year=2018),
+            tipo=bm.BoletaCPR.TIPO[1][0],
+            capitalizacao=bm.BoletaCPR.CAPITALIZACAO[0][0]
+        )
+        boleta_CPR_CVM = mommy.make('boletagem.BoletaCPR',
+            descricao="Despesa CVM 10.2018 - DIFERIMENTO",
+            fundo=self.veredas,
+            valor_cheio=decimal.Decimal(15036.9).quantize(decimal.Decimal('1.00')),
+            data_inicio=datetime.date(day=8, month=10, year=2018),
+            data_vigencia_inicio=datetime.date(day=8, month=10, year=2018),
+            data_vigencia_fim=datetime.date(day=8, month=1, year=2019),
+            data_pagamento=datetime.date(day=8, month=1, year=2019),
+            tipo=bm.BoletaCPR.TIPO[1][0],
+            capitalizacao=bm.BoletaCPR.CAPITALIZACAO[0][0]
+        )
+        boleta_CPR_SELIC = mommy.make('boletagem.BoletaCPR',
+            descricao="Despesa SELIC 10.2018 - DIFERIMENTO",
+            fundo=self.veredas,
+            valor_cheio=decimal.Decimal(119.02).quantize(decimal.Decimal('1.00')),
+            data_inicio=datetime.date(day=19, month=11, year=2018),
+            data_vigencia_inicio=datetime.date(day=19, month=11, year=2018),
+            data_vigencia_fim=datetime.date(day=19, month=12, year=2018),
+            data_pagamento=datetime.date(day=19, month=12, year=2018),
+            tipo=bm.BoletaCPR.TIPO[1][0],
+            capitalizacao=bm.BoletaCPR.CAPITALIZACAO[0][0]
+        )
+        boleta_CPR_Audit = mommy.make('boletagem.BoletaCPR',
+            descricao="Despesa Auditoria 03.2017 - DIFERIMENTO",
+            fundo=self.veredas,
+            valor_cheio=decimal.Decimal(-650).quantize(decimal.Decimal('1.00')),
+            data_inicio=datetime.date(day=26, month=7, year=2018),
+            data_vigencia_inicio=datetime.date(day=26, month=7, year=2018),
+            data_vigencia_fim=datetime.date(day=25, month=7, year=2019),
+            data_pagamento=datetime.date(day=25, month=7, year=2019),
+            tipo=bm.BoletaCPR.TIPO[1][0],
+            capitalizacao=bm.BoletaCPR.CAPITALIZACAO[0][0]
+        )
+        boleta_CPR_Audit2 = mommy.make('boletagem.BoletaCPR',
+            descricao="Despesa Auditoria 03.2018 - DIFERIMENTO",
+            fundo=self.veredas,
+            valor_cheio=decimal.Decimal(8650.93).quantize(decimal.Decimal('1.00')),
+            data_inicio=datetime.date(day=24, month=8, year=2018),
+            data_vigencia_inicio=datetime.date(day=24, month=8, year=2018),
+            data_vigencia_fim=datetime.date(day=23, month=8, year=2019),
+            data_pagamento=datetime.date(day=23, month=8, year=2019),
+            tipo=bm.BoletaCPR.TIPO[1][0],
+            capitalizacao=bm.BoletaCPR.CAPITALIZACAO[0][0]
+        )
+        boleta_CPR_SELIC2 = mommy.make('boletagem.BoletaCPR',
+            descricao="Despesa SELIC 11.2018 - Acúmulo",
+            fundo=self.veredas,
+            valor_parcial=decimal.Decimal(-5.41).quantize(decimal.Decimal('1.00')),
+            data_inicio=datetime.date(day=1, month=11, year=2018),
+            data_vigencia_inicio=datetime.date(day=1, month=11, year=2018),
+            data_vigencia_fim=datetime.date(day=30, month=11, year=2018),
+            data_pagamento=datetime.date(day=30, month=11, year=2018),
+            tipo=bm.BoletaCPR.TIPO[0][0],
+            capitalizacao=bm.BoletaCPR.CAPITALIZACAO[0][0]
+        )
+        boleta_CPR_Administracao = mommy.make('boletagem.BoletaCPR',
+            descricao="Taxa de Administração 11.2018",
+            fundo=self.veredas,
+            valor_cheio=decimal.Decimal('-27656.98').quantize(decimal.Decimal('1.00')),
+            data_inicio=datetime.date(day=1, month=11, year=2018),
+            data_vigencia_inicio=datetime.date(day=1, month=11, year=2018),
+            data_vigencia_fim=datetime.date(day=30, month=11, year=2018),
+            data_pagamento=datetime.date(day=7, month=12, year=2018),
+            tipo=bm.BoletaCPR.TIPO[4][0],
+            capitalizacao=bm.BoletaCPR.CAPITALIZACAO[0][0]
+        )
+
+        vertice_taxa_adm = mommy.make('fundo.Vertice',
+            fundo=self.veredas,
+            custodia=btg_cust,
+            corretora=btg_corr,
+            quantidade=1,
+            valor=decimal.Decimal('-27656.98'),
+            preco=1,
+            movimentacao=0,
+            data=datetime.date(day=22, month=11, year=2018),
+            cambio=1,
+            content_object=boleta_CPR_Administracao
+        )
+
+        carteira = mommy.make('fundo.carteira',
+            fundo=self.veredas,
+            data=datetime.date(day=22, month=11, year=2018),
+            cota=decimal.Decimal('1884.684601'),
+            pl=decimal.Decimal('861380457.16'),
+            movimentacao=0
+        )
+
+        boleta_CPR_DVD_ITUB = mommy.make('boletagem.BoletaCPR',
+            descricao="Dividendos ITUB4",
+            fundo=self.veredas,
+            valor_cheio=decimal.Decimal(1864.95).quantize(decimal.Decimal('1.00')),
+            data_inicio=datetime.date(day=1, month=11, year=2018),
+            data_pagamento=datetime.date(day=3, month=12, year=2018),
+            tipo=bm.BoletaCPR.TIPO[2][0],
+            capitalizacao=bm.BoletaCPR.CAPITALIZACAO[2][0]
+        )
+        boleta_provisao_DVD_ITUB = mommy.make('boletagem.BoletaProvisao',
+            descricao="Dividendos ITUB4",
+            fundo=self.veredas,
+            caixa_alvo=self.veredas.caixa_padrao,
+            data_pagamento=boleta_CPR_DVD_ITUB.data_pagamento,
+            financeiro=boleta_CPR_DVD_ITUB.valor_cheio,
+            estado=bm.BoletaProvisao.ESTADO[0][1]
+        )
+
+        boleta_CPR_DVD_LREN1 = mommy.make('boletagem.BoletaCPR',
+            descricao="JSCP LREN3",
+            fundo=self.veredas,
+            valor_cheio=decimal.Decimal(16725.54).quantize(decimal.Decimal('1.00')),
+            data_inicio=datetime.date(day=21, month=3, year=2018),
+            data_pagamento=datetime.date(day=31, month=12, year=2018),
+            tipo=bm.BoletaCPR.TIPO[2][0],
+            capitalizacao=bm.BoletaCPR.CAPITALIZACAO[2][0]
+        )
+        boleta_provisao_DVD_LREN1 = mommy.make('boletagem.BoletaProvisao',
+            descricao="JSCP LREN3",
+            fundo=self.veredas,
+            caixa_alvo=self.veredas.caixa_padrao,
+            data_pagamento=boleta_CPR_DVD_LREN1.data_pagamento,
+            financeiro=boleta_CPR_DVD_LREN1.valor_cheio,
+            estado=bm.BoletaProvisao.ESTADO[0][1]
+        )
+
+        boleta_CPR_DVD_LREN2 = mommy.make('boletagem.BoletaCPR',
+            descricao="JSCP LREN3",
+            fundo=self.veredas,
+            valor_cheio=decimal.Decimal(18137.16).quantize(decimal.Decimal('1.00')),
+            data_inicio=datetime.date(day=25, month=6, year=2018),
+            data_pagamento=datetime.date(day=31, month=12, year=2018),
+            tipo=bm.BoletaCPR.TIPO[2][0],
+            capitalizacao=bm.BoletaCPR.CAPITALIZACAO[2][0]
+        )
+        boleta_provisao_DVD_LREN2 = mommy.make('boletagem.BoletaProvisao',
+            descricao="JSCP LREN3",
+            fundo=self.veredas,
+            caixa_alvo=self.veredas.caixa_padrao,
+            data_pagamento=boleta_CPR_DVD_LREN2.data_pagamento,
+            financeiro=boleta_CPR_DVD_LREN2.valor_cheio,
+            estado=bm.BoletaProvisao.ESTADO[0][1]
+        )
+
+        boleta_CPR_DVD_LREN3 = mommy.make('boletagem.BoletaCPR',
+            descricao="JSCP LREN3",
+            fundo=self.veredas,
+            valor_cheio=decimal.Decimal(19732.4).quantize(decimal.Decimal('1.00')),
+            data_inicio=datetime.date(day=25, month=9, year=2018),
+            data_pagamento=datetime.date(day=31, month=12, year=2099),
+            tipo=bm.BoletaCPR.TIPO[2][0],
+            capitalizacao=bm.BoletaCPR.CAPITALIZACAO[2][0]
+        )
+        boleta_provisao_DVD_LREN3 = mommy.make('boletagem.BoletaProvisao',
+            descricao="JSCP LREN3",
+            fundo=self.veredas,
+            caixa_alvo=self.veredas.caixa_padrao,
+            data_pagamento=boleta_CPR_DVD_LREN3.data_pagamento,
+            financeiro=boleta_CPR_DVD_LREN3.valor_cheio,
+            estado=bm.BoletaProvisao.ESTADO[0][1]
+        )
+
+        boleta_CPR_DVD_WEGE = mommy.make('boletagem.BoletaCPR',
+            descricao="JSCP WEGE3",
+            fundo=self.veredas,
+            valor_cheio=decimal.Decimal(15447.96).quantize(decimal.Decimal('1.00')),
+            data_inicio=datetime.date(day=24, month=9, year=2018),
+            data_pagamento=datetime.date(day=13, month=3, year=2019),
+            tipo=bm.BoletaCPR.TIPO[2][0],
+            capitalizacao=bm.BoletaCPR.CAPITALIZACAO[2][0]
+        )
+        boleta_provisao_DVD_WEGE = mommy.make('boletagem.BoletaProvisao',
+            descricao="JSCP WEGE3",
+            fundo=self.veredas,
+            caixa_alvo=self.veredas.caixa_padrao,
+            data_pagamento=boleta_CPR_DVD_WEGE.data_pagamento,
+            financeiro=boleta_CPR_DVD_WEGE.valor_cheio,
+            estado=bm.BoletaProvisao.ESTADO[0][1]
+        )
+
+        boleta_CPR_DVD_RADL1 = mommy.make('boletagem.BoletaCPR',
+            descricao="JSCP RADL3",
+            fundo=self.veredas,
+            valor_cheio=decimal.Decimal(296940.38).quantize(decimal.Decimal('1.00')),
+            data_inicio=datetime.date(day=27, month=9, year=2018),
+            data_pagamento=datetime.date(day=31, month=5, year=2019),
+            tipo=bm.BoletaCPR.TIPO[2][0],
+            capitalizacao=bm.BoletaCPR.CAPITALIZACAO[2][0]
+        )
+        boleta_provisao_DVD_RADL1 = mommy.make('boletagem.BoletaProvisao',
+            descricao="JSCP RADL3",
+            fundo=self.veredas,
+            caixa_alvo=self.veredas.caixa_padrao,
+            data_pagamento=boleta_CPR_DVD_RADL1.data_pagamento,
+            financeiro=boleta_CPR_DVD_RADL1.valor_cheio,
+            estado=bm.BoletaProvisao.ESTADO[0][1]
+        )
+
+        boleta_CPR_DVD_RADL2 = mommy.make('boletagem.BoletaCPR',
+            descricao="JSCP RADL3",
+            fundo=self.veredas,
+            valor_cheio=decimal.Decimal(288374).quantize(decimal.Decimal('1.00')),
+            data_inicio=datetime.date(day=27, month=6, year=2018),
+            data_pagamento=datetime.date(day=3, month=12, year=2018),
+            tipo=bm.BoletaCPR.TIPO[2][0],
+            capitalizacao=bm.BoletaCPR.CAPITALIZACAO[2][0]
+        )
+        boleta_provisao_DVD_RADL2 = mommy.make('boletagem.BoletaProvisao',
+            descricao="JSCP RADL3",
+            fundo=self.veredas,
+            caixa_alvo=self.veredas.caixa_padrao,
+            data_pagamento=boleta_CPR_DVD_RADL2.data_pagamento,
+            financeiro=boleta_CPR_DVD_RADL2.valor_cheio,
+            estado=bm.BoletaProvisao.ESTADO[0][1]
+        )
+
+        boleta_CPR_DVD_RADL3 = mommy.make('boletagem.BoletaCPR',
+            descricao="JSCP RADL3",
+            fundo=self.veredas,
+            valor_cheio=decimal.Decimal(291228.83).quantize(decimal.Decimal('1.00')),
+            data_inicio=datetime.date(day=27, month=3, year=2018),
+            data_pagamento=datetime.date(day=3, month=12, year=2018),
+            tipo=bm.BoletaCPR.TIPO[2][0],
+            capitalizacao=bm.BoletaCPR.CAPITALIZACAO[2][0]
+        )
+        boleta_provisao_DVD_RADL3 = mommy.make('boletagem.BoletaProvisao',
+            descricao="JSCP RADL3",
+            fundo=self.veredas,
+            caixa_alvo=self.veredas.caixa_padrao,
+            data_pagamento=boleta_CPR_DVD_RADL3.data_pagamento,
+            financeiro=boleta_CPR_DVD_RADL3.valor_cheio,
+            estado=bm.BoletaProvisao.ESTADO[0][1]
+        )
+
+        # BOLETAS EMPRÉSTIMOS
+        boleta_emprestimo_abev1 = mommy.make('boletagem.BoletaEmprestimo',
+            ativo=ABEV,
+            data_operacao=datetime.date(day=3,month=9,year=2018),
+            fundo=self.veredas,
+            corretora=btg_corr,
+            custodia=btg_cust,
+            data_vencimento=datetime.date(day=21,month=12,year=2018),
+            reversivel=True,
+            data_reversao=datetime.date(day=4,month=9,year=2018),
+            operacao=bm.BoletaEmprestimo.OPERACAO[0][0],
+            comissao=decimal.Decimal(0),
+            quantidade=31682,
+            taxa=0.1,
+            preco=18.84,
+            caixa_alvo=self.veredas.caixa_padrao,
+            calendario=calendario
+        )
+        boleta_emprestimo_abev2 = mommy.make('boletagem.BoletaEmprestimo',
+            ativo=ABEV,
+            data_operacao=datetime.date(day=3,month=9,year=2018),
+            fundo=self.veredas,
+            corretora=btg_corr,
+            custodia=btg_cust,
+            data_vencimento=datetime.date(day=21,month=12,year=2018),
+            reversivel=True,
+            data_reversao=datetime.date(day=4,month=9,year=2018),
+            operacao=bm.BoletaEmprestimo.OPERACAO[0][0],
+            comissao=decimal.Decimal(0),
+            quantidade=9300,
+            taxa=0.1,
+            preco=18.84,
+            caixa_alvo=self.veredas.caixa_padrao,
+            calendario=calendario
+        )
+        boleta_emprestimo_abev3 = mommy.make('boletagem.BoletaEmprestimo',
+            ativo=ABEV,
+            data_operacao=datetime.date(day=19,month=11,year=2018),
+            fundo=self.veredas,
+            corretora=btg_corr,
+            custodia=btg_cust,
+            data_vencimento=datetime.date(day=2,month=1,year=2019),
+            reversivel=True,
+            data_reversao=datetime.date(day=21,month=11,year=2018),
+            operacao=bm.BoletaEmprestimo.OPERACAO[0][0],
+            comissao=decimal.Decimal(0),
+            quantidade=173900,
+            taxa=0.04,
+            preco=16.27,
+            caixa_alvo=self.veredas.caixa_padrao,
+            calendario=calendario
+        )
+        boleta_emprestimo_abev4 = mommy.make('boletagem.BoletaEmprestimo',
+            ativo=ABEV,
+            data_operacao=datetime.date(day=19,month=11,year=2018),
+            fundo=self.veredas,
+            corretora=btg_corr,
+            custodia=btg_cust,
+            data_vencimento=datetime.date(day=2,month=1,year=2019),
+            reversivel=True,
+            data_reversao=datetime.date(day=21,month=11,year=2018),
+            operacao=bm.BoletaEmprestimo.OPERACAO[0][0],
+            comissao=decimal.Decimal(0),
+            quantidade=76100,
+            taxa=0.04,
+            preco=16.27,
+            caixa_alvo=self.veredas.caixa_padrao,
+            calendario=calendario
+        )
+        boleta_emprestimo_itub1 = mommy.make('boletagem.BoletaEmprestimo',
+            ativo=ITUB,
+            data_operacao=datetime.date(day=12,month=11,year=2018),
+            fundo=self.veredas,
+            corretora=btg_corr,
+            custodia=btg_cust,
+            data_vencimento=datetime.date(day=21,month=12,year=2018),
+            reversivel=True,
+            data_reversao=datetime.date(day=13,month=11,year=2018),
+            operacao=bm.BoletaEmprestimo.OPERACAO[0][0],
+            comissao=decimal.Decimal(0),
+            quantidade=4078,
+            taxa=0.07,
+            preco=50.32,
+            caixa_alvo=self.veredas.caixa_padrao,
+            calendario=calendario
+        )
+        boleta_emprestimo_itub2 = mommy.make('boletagem.BoletaEmprestimo',
+            ativo=ITUB,
+            data_operacao=datetime.date(day=23,month=11,year=2018),
+            fundo=self.veredas,
+            corretora=btg_corr,
+            custodia=btg_cust,
+            data_vencimento=datetime.date(day=21,month=12,year=2018),
+            reversivel=True,
+            data_reversao=datetime.date(day=26,month=11,year=2018),
+            operacao=bm.BoletaEmprestimo.OPERACAO[0][0],
+            comissao=decimal.Decimal(0),
+            quantidade=14343,
+            taxa=0.07,
+            preco=34.68,
+            caixa_alvo=self.veredas.caixa_padrao,
+            calendario=calendario
+        )
+        boleta_emprestimo_itub3 = mommy.make('boletagem.BoletaEmprestimo',
+            ativo=ITUB,
+            data_operacao=datetime.date(day=23,month=11,year=2018),
+            fundo=self.veredas,
+            corretora=btg_corr,
+            custodia=btg_cust,
+            data_vencimento=datetime.date(day=26,month=12,year=2089),
+            reversivel=True,
+            data_reversao=datetime.date(day=26,month=11,year=2018),
+            operacao=bm.BoletaEmprestimo.OPERACAO[0][0],
+            comissao=decimal.Decimal(0),
+            quantidade=28950,
+            taxa=0.09,
+            preco=34.68,
+            caixa_alvo=self.veredas.caixa_padrao,
+            calendario=calendario
+        )
+        boleta_emprestimo_lame = mommy.make('boletagem.BoletaEmprestimo',
+            ativo=LAME,
+            data_operacao=datetime.date(day=23,month=11,year=2018),
+            fundo=self.veredas,
+            corretora=btg_corr,
+            custodia=btg_cust,
+            data_vencimento=datetime.date(day=22,month=4,year=2019),
+            reversivel=True,
+            data_reversao=datetime.date(day=26,month=11,year=2018),
+            operacao=bm.BoletaEmprestimo.OPERACAO[0][0],
+            comissao=decimal.Decimal(0),
+            quantidade=5100,
+            taxa=0.5,
+            preco=13.44,
+            caixa_alvo=self.veredas.caixa_padrao,
+            calendario=calendario
+        )
+        boleta_emprestimo_ugpa1 = mommy.make('boletagem.BoletaEmprestimo',
+            ativo=UGPA,
+            data_operacao=datetime.date(day=31,month=10,year=2018),
+            fundo=self.veredas,
+            corretora=btg_corr,
+            custodia=btg_cust,
+            data_vencimento=datetime.date(day=12,month=12,year=2018),
+            reversivel=True,
+            data_reversao=datetime.date(day=1,month=11,year=2018),
+            operacao=bm.BoletaEmprestimo.OPERACAO[0][0],
+            comissao=decimal.Decimal(0),
+            quantidade=36285,
+            taxa=0.15,
+            preco=44.5,
+            caixa_alvo=self.veredas.caixa_padrao,
+            calendario=calendario
+        )
+        boleta_emprestimo_ugpa2 = mommy.make('boletagem.BoletaEmprestimo',
+            ativo=UGPA,
+            data_operacao=datetime.date(day=7,month=11,year=2018),
+            fundo=self.veredas,
+            corretora=btg_corr,
+            custodia=btg_cust,
+            data_vencimento=datetime.date(day=18,month=12,year=2018),
+            reversivel=True,
+            data_reversao=datetime.date(day=8,month=11,year=2018),
+            operacao=bm.BoletaEmprestimo.OPERACAO[0][0],
+            comissao=decimal.Decimal(0),
+            quantidade=2700,
+            taxa=0.18,
+            preco=42.73,
+            caixa_alvo=self.veredas.caixa_padrao,
+            calendario=calendario
+        )
+        boleta_emprestimo_ugpa3 = mommy.make('boletagem.BoletaEmprestimo',
+            ativo=UGPA,
+            data_operacao=datetime.date(day=12,month=11,year=2018),
+            fundo=self.veredas,
+            corretora=btg_corr,
+            custodia=btg_cust,
+            data_vencimento=datetime.date(day=21,month=12,year=2018),
+            reversivel=True,
+            data_reversao=datetime.date(day=13,month=11,year=2018),
+            operacao=bm.BoletaEmprestimo.OPERACAO[0][0],
+            comissao=decimal.Decimal(0),
+            quantidade=45000,
+            taxa=0.13,
+            preco=40.61,
+            caixa_alvo=self.veredas.caixa_padrao,
+            calendario=calendario
+        )
+        boleta_emprestimo_ugpa4 = mommy.make('boletagem.BoletaEmprestimo',
+            ativo=UGPA,
+            data_operacao=datetime.date(day=16,month=11,year=2018),
+            fundo=self.veredas,
+            corretora=btg_corr,
+            custodia=btg_cust,
+            data_vencimento=datetime.date(day=28,month=12,year=2018),
+            reversivel=True,
+            data_reversao=datetime.date(day=19,month=11,year=2018),
+            operacao=bm.BoletaEmprestimo.OPERACAO[0][0],
+            comissao=decimal.Decimal(0),
+            quantidade=215,
+            taxa=0.13,
+            preco=40.39,
+            caixa_alvo=self.veredas.caixa_padrao,
+            calendario=calendario
+        )
+        boleta_emprestimo_ugpa5 = mommy.make('boletagem.BoletaEmprestimo',
+            ativo=UGPA,
+            data_operacao=datetime.date(day=16,month=11,year=2018),
+            fundo=self.veredas,
+            corretora=btg_corr,
+            custodia=btg_cust,
+            data_vencimento=datetime.date(day=28,month=12,year=2018),
+            reversivel=True,
+            data_reversao=datetime.date(day=19,month=11,year=2018),
+            operacao=bm.BoletaEmprestimo.OPERACAO[0][0],
+            comissao=decimal.Decimal(0),
+            quantidade=20000,
+            taxa=0.13,
+            preco=40.39,
+            caixa_alvo=self.veredas.caixa_padrao,
+            calendario=calendario
+        )
+        boleta_emprestimo_ugpa6 = mommy.make('boletagem.BoletaEmprestimo',
+            ativo=UGPA,
+            data_operacao=datetime.date(day=16,month=11,year=2018),
+            fundo=self.veredas,
+            corretora=btg_corr,
+            custodia=btg_cust,
+            data_vencimento=datetime.date(day=28,month=12,year=2018),
+            reversivel=True,
+            data_reversao=datetime.date(day=19,month=11,year=2018),
+            operacao=bm.BoletaEmprestimo.OPERACAO[0][0],
+            comissao=decimal.Decimal(0),
+            quantidade=78,
+            taxa=0.13,
+            preco=40.39,
+            caixa_alvo=self.veredas.caixa_padrao,
+            calendario=calendario
+        )
+        boleta_emprestimo_wege1 = mommy.make('boletagem.BoletaEmprestimo',
+            ativo=WEGE,
+            data_operacao=datetime.date(day=22,month=10,year=2018),
+            fundo=self.veredas,
+            corretora=btg_corr,
+            custodia=btg_cust,
+            data_vencimento=datetime.date(day=3,month=12,year=2018),
+            reversivel=True,
+            data_reversao=datetime.date(day=23,month=10,year=2018),
+            operacao=bm.BoletaEmprestimo.OPERACAO[0][0],
+            comissao=decimal.Decimal(0),
+            quantidade=3608,
+            taxa=0.22,
+            preco=18.55,
+            caixa_alvo=self.veredas.caixa_padrao,
+            calendario=calendario
+        )
+        boleta_emprestimo_wege2 = mommy.make('boletagem.BoletaEmprestimo',
+            ativo=WEGE,
+            data_operacao=datetime.date(day=12,month=11,year=2018),
+            fundo=self.veredas,
+            corretora=btg_corr,
+            custodia=btg_cust,
+            data_vencimento=datetime.date(day=21,month=12,year=2018),
+            reversivel=True,
+            data_reversao=datetime.date(day=13,month=11,year=2018),
+            operacao=bm.BoletaEmprestimo.OPERACAO[0][0],
+            comissao=decimal.Decimal(0),
+            quantidade=601,
+            taxa=0.21,
+            preco=18.49,
+            caixa_alvo=self.veredas.caixa_padrao,
+            calendario=calendario
+        )
+        boleta_emprestimo_wege3 = mommy.make('boletagem.BoletaEmprestimo',
+            ativo=WEGE,
+            data_operacao=datetime.date(day=12,month=11,year=2018),
+            fundo=self.veredas,
+            corretora=btg_corr,
+            custodia=btg_cust,
+            data_vencimento=datetime.date(day=21,month=12,year=2018),
+            reversivel=True,
+            data_reversao=datetime.date(day=13,month=11,year=2018),
+            operacao=bm.BoletaEmprestimo.OPERACAO[0][0],
+            comissao=decimal.Decimal(0),
+            quantidade=136,
+            taxa=0.21,
+            preco=18.49,
+            caixa_alvo=self.veredas.caixa_padrao,
+            calendario=calendario
+        )
+        boleta_emprestimo_wege4 = mommy.make('boletagem.BoletaEmprestimo',
+            ativo=WEGE,
+            data_operacao=datetime.date(day=12,month=11,year=2018),
+            fundo=self.veredas,
+            corretora=btg_corr,
+            custodia=btg_cust,
+            data_vencimento=datetime.date(day=21,month=12,year=2018),
+            reversivel=True,
+            data_reversao=datetime.date(day=13,month=11,year=2018),
+            operacao=bm.BoletaEmprestimo.OPERACAO[0][0],
+            comissao=decimal.Decimal(0),
+            quantidade=99999,
+            taxa=0.2,
+            preco=18.49,
+            caixa_alvo=self.veredas.caixa_padrao,
+            calendario=calendario
+        )
+        boleta_emprestimo_wege5 = mommy.make('boletagem.BoletaEmprestimo',
+            ativo=WEGE,
+            data_operacao=datetime.date(day=16,month=11,year=2018),
+            fundo=self.veredas,
+            corretora=btg_corr,
+            custodia=btg_cust,
+            data_vencimento=datetime.date(day=28,month=12,year=2018),
+            reversivel=True,
+            data_reversao=datetime.date(day=19,month=11,year=2018),
+            operacao=bm.BoletaEmprestimo.OPERACAO[0][0],
+            comissao=decimal.Decimal(0),
+            quantidade=19,
+            taxa=0.2,
+            preco=18.32,
+            caixa_alvo=self.veredas.caixa_padrao,
+            calendario=calendario
+        )
+        boleta_emprestimo_wege6 = mommy.make('boletagem.BoletaEmprestimo',
+            ativo=WEGE,
+            data_operacao=datetime.date(day=21,month=11,year=2018),
+            fundo=self.veredas,
+            corretora=btg_corr,
+            custodia=btg_cust,
+            data_vencimento=datetime.date(day=3,month=1,year=2019),
+            reversivel=True,
+            data_reversao=datetime.date(day=22,month=11,year=2018),
+            operacao=bm.BoletaEmprestimo.OPERACAO[0][0],
+            comissao=decimal.Decimal(0),
+            quantidade=151497,
+            taxa=0.17,
+            preco=18.16,
+            caixa_alvo=self.veredas.caixa_padrao,
+            calendario=calendario
+        )
+        boleta_emprestimo_wege7 = mommy.make('boletagem.BoletaEmprestimo',
+            ativo=WEGE,
+            data_operacao=datetime.date(day=21,month=11,year=2018),
+            fundo=self.veredas,
+            corretora=btg_corr,
+            custodia=btg_cust,
+            data_vencimento=datetime.date(day=3,month=1,year=2019),
+            reversivel=True,
+            data_reversao=datetime.date(day=22,month=11,year=2018),
+            operacao=bm.BoletaEmprestimo.OPERACAO[0][0],
+            comissao=decimal.Decimal(0),
+            quantidade=2297,
+            taxa=0.17,
+            preco=18.16,
+            caixa_alvo=self.veredas.caixa_padrao,
+            calendario=calendario
+        )
+
     def test_juntar_quantidades(self):
-        self.fundo.fechar_boletas_do_fundo(self.data_fechamento)
-        self.fundo.criar_vertices(self.data_fechamento)
 
-        self.fundo.fechar_boletas_do_fundo(self.data_carteira)
-        self.fundo.criar_vertices(self.data_carteira)
+        self.veredas.fechar_boletas_do_fundo(self.data_carteira)
+        self.veredas.criar_vertices(self.data_carteira)
+        self.veredas.consolidar_vertices(self.data_carteira)
+        self.veredas.calcular_cota(self.data_carteira)
 
-        self.fundo.fechar_boletas_do_fundo(self.data_carteira1)
-        self.fundo.criar_vertices(self.data_carteira1)
+        self.assertTrue(fm.Carteira.objects.filter(data=self.data_carteira).exists())
 
-        # self.fundo.fechar_boletas_do_fundo(self.data_carteira2)
-        # self.fundo.criar_vertices(self.data_carteira2)
-        #
         # self.fundo.fechar_boletas_do_fundo(self.data_carteira3)
         # self.fundo.criar_vertices(self.data_carteira3)
 
-        self.assertTrue(False)
-        self.assertTrue(fm.Vertice.objects.filter(fundo=self.fundo, data=self.data_carteira).exists())
+        # self.assertTrue(False)
+        self.assertTrue(fm.Vertice.objects.filter(fundo=self.veredas, data=self.data_carteira).exists())

@@ -48,6 +48,7 @@ Sobre o tratamento de boletas do ponto de vista de processo do sistema:
 
 """
 import datetime
+from django.utils import timezone
 import decimal
 from django.db import models
 from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelation
@@ -106,6 +107,8 @@ class BaseModel(models.Model):
 
     def hard_delete(self):
         super(BaseModel, self).delete()
+
+
 
 class BoletaAcao(BaseModel):
     """
@@ -666,7 +669,7 @@ class BoletaFundoLocal(BaseModel):
     liquidacao = models.CharField(max_length=13, choices=TIPO_LIQUIDACAO)
     financeiro = models.DecimalField(max_digits=16, decimal_places=6, blank=True, null=True)
     quantidade = models.DecimalField(max_digits=15, decimal_places=6, blank=True, null=True)
-    preco = models.DecimalField(max_digits=15, decimal_places=6, blank=True, null=True)
+    preco = models.DecimalField(max_digits=17, decimal_places=8, blank=True, null=True)
     caixa_alvo = models.ForeignKey('ativos.Caixa', null=False, on_delete=models.PROTECT)
     custodia = models.ForeignKey('fundo.Custodiante', on_delete=models.PROTECT)
 
@@ -719,12 +722,12 @@ class BoletaFundoLocal(BaseModel):
         a quantidade deve ser negativa.
         Caso a quantidade seja
         """
-        if self.quantidade is None:
-            if self.cota_disponivel() == True:
+        if self.quantidade == None:
+            if self.cota_disponivel() == True or self.preco != None:
                 if self.operacao == "Aplicação":
-                    quantidade = abs(self.financeiro)/self.preco
+                    self.quantidade = abs(self.financeiro)/self.preco
                 elif self.operacao == "Resgate":
-                    quantidade = -abs(self.financeiro)/self.preco
+                    self.quantidade = -abs(self.financeiro)/self.preco
                 elif self.operacao == "Resgate Total":
                     # TODO: Em caso de resgate total, a quantidade é igual à posição inteira do ativo na carteira.
                     pass
@@ -802,7 +805,7 @@ class BoletaFundoLocal(BaseModel):
         """
         Busca informações no sistema para completar a boleta.
         """
-        if self.preco is None:
+        if self.preco == None:
             if self.cota_disponivel() == True:
                 if self.quantidade is None and self.financeiro is not None:
                     self.quantidade = self.financeiro/self.preco
@@ -813,6 +816,8 @@ class BoletaFundoLocal(BaseModel):
                         passivo = self.relacao_passivo.first()
                         passivo.cota = self.preco
                         passivo.save()
+            self.clean_quantidade()
+        if self.quantidade == None and self.preco != None:
             self.clean_quantidade()
 
     def criar_movimentacao(self):
@@ -831,7 +836,6 @@ class BoletaFundoLocal(BaseModel):
                 objeto_movimentacao=self.ativo,
                 tipo_id=self.ativo.id
             )
-            print(self)
             mov.full_clean()
             mov.save()
 
@@ -862,10 +866,15 @@ class BoletaFundoLocal(BaseModel):
         if self.boleta_CPR.all().exists() == False:
             # Clean na data de cotização para verificar se está tudo certo.
             self.full_clean()
+            financeiro = 0
+            if self.operacao == self.OPERACAO[0][0]:
+                financeiro = -abs(self.financeiro)
+            else:
+                financeiro = abs(self.financeiro)
             if self.data_cotizacao < self.data_liquidacao:
                 cpr = BoletaCPR(
                     descricao = self.operacao + " " + self.ativo.nome,
-                    valor_cheio = self.financeiro,
+                    valor_cheio = financeiro,
                     data_inicio = self.data_cotizacao,
                     data_pagamento = self.data_liquidacao,
                     fundo = self.fundo,
@@ -875,7 +884,7 @@ class BoletaFundoLocal(BaseModel):
             else:
                 cpr = BoletaCPR(
                     descricao = self.operacao + " " + self.ativo.nome,
-                    valor_cheio = self.financeiro,
+                    valor_cheio = financeiro,
                     data_inicio = self.data_liquidacao,
                     data_pagamento = self.data_cotizacao,
                     fundo = self.fundo,
@@ -978,8 +987,10 @@ class BoletaFundoOffshore(BaseModel):
         Busca o valor do preco no banco de dados e preenche a boleta, caso esteja
         disponível.
         """
-        if self.cotizavel():
+        if self.cotizavel() and self.preco == None:
             self.preco = mm.Preco.objects.filter(ativo=self.ativo, data_referencia=self.data_cotizacao).first().preco_fechamento
+        elif self.preco != None:
+            pass
         else:
             raise ValueError(_("Valor de cotização indisponível."))
 
@@ -1032,7 +1043,7 @@ class BoletaFundoOffshore(BaseModel):
         Determina se é possível cotizar a boleta, calculando a quantidade de
         cotas que serão movimentadas na operação.
         """
-        if mm.Preco.objects.filter(ativo=self.ativo, data_referencia=self.data_cotizacao).exists():
+        if mm.Preco.objects.filter(ativo=self.ativo, data_referencia=self.data_cotizacao).exists() or self.preco != None:
             return True
         return False
 
@@ -1139,6 +1150,7 @@ class BoletaFundoOffshore(BaseModel):
                 Tarefas a executar:
                     - Apenas atualiza o estado.
         """
+        print(self.estado)
         if self.estado != self.ESTADO[5][0]:
             if self.estado == self.ESTADO[4][0]: # Pendente de liquidação e cotização.
                 if self.financeiro != None and data_referencia == self.data_liquidacao:
@@ -1149,6 +1161,7 @@ class BoletaFundoOffshore(BaseModel):
                     self.criar_provisao()
                     self.estado = self.ESTADO[0][0]
                     self.save()
+                    self.fechar_boleta(data_referencia)
 
                 elif self.financeiro != None and (self.preco != None or self.cotizavel()) and \
                     data_referencia == self.data_cotizacao:
@@ -1168,6 +1181,7 @@ class BoletaFundoOffshore(BaseModel):
                         self.criar_boleta_passivo()
                     self.estado = self.ESTADO[1][0]
                     self.save()
+                    self.fechar_boleta(data_referencia)
 
                 elif self.financeiro != None and self.cotizavel() == False and \
                     data_referencia == self.data_cotizacao and self.preco == None:
@@ -1183,11 +1197,18 @@ class BoletaFundoOffshore(BaseModel):
                         self.criar_boleta_passivo()
                     self.save()
 
-            elif self.estado == self.ESTADO[0][0] and self.cotizavel() == True and data_referencia == self.data_cotizacao:
+            elif self.estado == self.ESTADO[0][0] and (self.cotizavel() == True or self.preco != None)\
+                and data_referencia == self.data_cotizacao:
                 """
                 Transição 3 - Pendente de cotização -> Concluído
                 """
-                boleta = self.boleta_CPR.filter(valor_cheio=self.financeiro).first()
+                financeiro = 0
+                if self.operacao == self.OPERACAO[0][0]:
+                    financeiro = decimal.Decimal(-abs(self.financeiro)).quantize(decimal.Decimal('1.00'))
+                else:
+                    financeiro = decimal.Decimal(abs(self.financeiro)).quantize(decimal.Decimal('1.00'))
+
+                boleta = self.boleta_CPR.filter(valor_cheio=-self.financeiro).first()
                 boleta.data_pagamento = data_referencia
                 boleta.save()
                 self.clean_preco()
@@ -1313,11 +1334,16 @@ class BoletaFundoOffshore(BaseModel):
         if self.boleta_CPR.all().filter(valor_cheio=self.financeiro).exists() == False:
             # Verifica se há preço. Se não houver, cria uma boleta de CPR sem
             # data de pagamento
+            financeiro = 0
+            if self.operacao == self.OPERACAO[0][0]:
+                financeiro = decimal.Decimal(-abs(self.financeiro)).quantize(decimal.Decimal('1.00'))
+            else:
+                financeiro = decimal.Decimal(abs(self.financeiro)).quantize(decimal.Decimal('1.00'))
             if self.preco == None:
                 if self.data_liquidacao < self.data_cotizacao:
                     cpr = BoletaCPR(
                         descricao="Cotização de " + self.ativo.nome,
-                        valor_cheio=self.financeiro.quantize(decimal.Decimal('1.00')),
+                        valor_cheio=financeiro,
                         data_pagamento=data_referencia,
                         data_inicio=self.data_liquidacao,
                         fundo=self.fundo,
@@ -1328,7 +1354,7 @@ class BoletaFundoOffshore(BaseModel):
                 else:
                     cpr = BoletaCPR(
                         descricao="Cotização de " + self.ativo.nome,
-                        valor_cheio=self.financeiro.quantize(decimal.Decimal('1.00')),
+                        valor_cheio=financeiro,
                         data_pagamento=data_referencia,
                         data_inicio=self.data_cotizacao,
                         fundo=self.fundo,
@@ -1340,7 +1366,7 @@ class BoletaFundoOffshore(BaseModel):
                 if self.data_liquidacao < self.data_cotizacao:
                     cpr = BoletaCPR(
                         descricao="Cotização de " + self.ativo.nome,
-                        valor_cheio=self.financeiro.quantize(decimal.Decimal('1.00')),
+                        valor_cheio=financeiro,
                         data_pagamento=data_referencia,
                         data_inicio=self.data_liquidacao,
                         fundo=self.fundo,
@@ -1351,7 +1377,7 @@ class BoletaFundoOffshore(BaseModel):
                 else:
                     cpr = BoletaCPR(
                         descricao="Cotização de " + self.ativo.nome,
-                        valor_cheio=self.financeiro.quantize(decimal.Decimal('1.00')),
+                        valor_cheio=financeiro,
                         data_pagamento=data_referencia,
                         data_inicio=self.data_cotizacao,
                         fundo=self.fundo,
@@ -1364,12 +1390,17 @@ class BoletaFundoOffshore(BaseModel):
         """
         Cria uma boleta relacionada à liquidação da movimentação.
         Ela deve ter um valor contrário ao valor financeiro da boleta de
-        movimentação.
+        CPR de cotização.
         """
         if self.boleta_CPR.all().filter(valor_cheio=-self.financeiro).exists() == False:
+            financeiro = 0
+            if self.operacao == self.OPERACAO[0][0]:
+                financeiro = decimal.Decimal(abs(self.financeiro)).quantize(decimal.Decimal('1.00'))
+            else:
+                financeiro = decimal.Decimal(-abs(self.financeiro)).quantize(decimal.Decimal('1.00'))
             cpr = BoletaCPR(
                 descricao="Liquidação de " + self.ativo.nome,
-                valor_cheio=-self.financeiro.quantize(decimal.Decimal('1.00')),
+                valor_cheio=financeiro,
                 data_pagamento=self.data_liquidacao,
                 data_inicio=self.data_cotizacao,
                 fundo=self.fundo,
@@ -2013,14 +2044,17 @@ class BoletaCPR(BaseModel):
         ("Nenhuma", "Nenhuma")
     )
 
+    TAXA_ADM_TEXTO = "TAXA DE ADMINISTRAÇÃO "
+
     # Descrição sobre o que é o CPR.
     descricao = models.CharField("Descrição", max_length=50)
     # Fundo relativo ao CPR
     fundo = models.ForeignKey('fundo.Fundo', on_delete=models.PROTECT)
-    # Valor cheio do CPR.
+    # Valor cheio do CPR. Assumimos que o valor final fica na moeda do fundo
     valor_cheio = models.DecimalField(max_digits=12, decimal_places=2,
         blank=True, null=True)
-    # Valor parcial do CPR, no caso de boletar CPR que acumula diariamente
+    # Valor parcial do CPR, no caso de boletar CPR que acumula diariamente.
+    # Assumimos que o valor final fica na moeda do fundo.
     valor_parcial = models.DecimalField(max_digits=12, decimal_places=2,
         blank=True, null=True)
     # Data em que o CPR deve começar a ser considerado no fundo
@@ -2032,13 +2066,13 @@ class BoletaCPR(BaseModel):
     # Data em que o CPR deve sair da carteira.
     data_pagamento = models.DateField(null=True, blank=True, default=datetime.date.max)
     # Tipo de CPR
-    tipo = models.CharField(max_length=12, choices=TIPO, default=TIPO[2][0])
+    tipo = models.CharField(max_length=21, choices=TIPO, default=TIPO[2][0])
     # Capitalização indica o período com que o CPR acumula
     capitalizacao = models.CharField(max_length=7, choices=CAPITALIZACAO,
         default=CAPITALIZACAO[2][0])
 
     relacao_vertice = GenericRelation('fundo.Vertice', related_query_name='cpr')
-
+    relacao_provisao= GenericRelation('BoletaProvisao')
     # Content type para servir de ForeignKey de qualquer boleta de operação
     # a ser inserida no sistema.
     content_type = models.ForeignKey(ContentType, on_delete=models.PROTECT, null=True, blank=True)
@@ -2079,8 +2113,10 @@ class BoletaCPR(BaseModel):
         tipo, data de vigência e data de início e pagamento. No caso de
         CPR e Empréstimo, seu valor cheio é o seu valor presente, sempre
         """
+        import pdb
         if self.tipo == self.TIPO[2][0] or self.tipo == self.TIPO[3][0]:
-            return self.valor_cheio
+            cambio = self.buscar_cambio(data_referencia)
+            return self.valor_cheio*cambio
 
         if self.valor_cheio == None and self.valor_parcial != None:
             self.valor_cheio = self.calcula_valor_cheio()
@@ -2091,6 +2127,7 @@ class BoletaCPR(BaseModel):
         # Tipo Acúmulo
         if self.tipo == self.TIPO[0][0]:
             # DIÁRIO
+
             if self.capitalizacao == self.CAPITALIZACAO[0][0]:
                 if data_referencia > self.data_vigencia_fim:
                     resultado = (self.fundo.calendario.dia_trabalho_total(self.data_vigencia_inicio, self.data_vigencia_fim))*self.valor_parcial
@@ -2113,6 +2150,7 @@ class BoletaCPR(BaseModel):
                     return self.fundo.calendario.conta_fim_mes(self.data_vigencia_inicio, self.data_vigencia_fim)*self.valor_parcial
         # Tipo Diferimento
         elif self.tipo == self.TIPO[1][0]:
+
             if self.capitalizacao == self.CAPITALIZACAO[0][0]:
                 if data_referencia < self.data_vigencia_inicio:
                     return self.valor_cheio
@@ -2122,7 +2160,29 @@ class BoletaCPR(BaseModel):
                     return self.valor_cheio - self.valor_parcial*(self.fundo.calendario.dia_trabalho_total(self.data_vigencia_inicio, data_referencia)-1)
             elif self.capitalizacao == self.CAPITALIZACAO[1][0]:
                 if self.data_vigencia_inicio <= data_referencia <= self.data_vigencia_fim:
-                    return self.valor_cheio - self.valor_parcial*self.fundo.calendaio.conta_fim_mes(self.data_vigencia_inicio, data_referencia)
+                    return self.valor_cheio - self.valor_parcial*self.fundo.calendario.conta_fim_mes(self.data_vigencia_inicio, data_referencia)
+
+    def buscar_cambio(self, data_referencia):
+        """
+        Dada uma data de referência, busca o câmbio relativo ao ativo do CPR.
+        """
+        if self.content_object != None:
+            if type(self.content_object) != BoletaAcao and \
+                type(self.content_object) != BoletaCambio and \
+                type(self.content_object) != BoletaPassivo:
+                moeda = self.content_object.ativo.moeda
+                return self.fundo.cambio_do_dia(data_referencia, moeda)
+            elif type(self.content_object) == BoletaAcao:
+                moeda = self.content_object.acao.moeda
+                return self.fundo.cambio_do_dia(data_referencia, moeda)
+            else:
+                return decimal.Decimal(1)
+        else:
+            """
+            Corrigir isso depois
+            """
+
+            return decimal.Decimal(1)
 
     def calcula_valor_cheio(self):
         """
@@ -2156,6 +2216,8 @@ class BoletaCPR(BaseModel):
             self.criar_vertice_CPR(data_referencia)
         elif self.tipo == self.TIPO[3][0]:
             self.criar_vertice_emprestimo(data_referencia)
+        elif self.tipo == self.TIPO[4][0]:
+            self.criar_vertice_taxa_adm(data_referencia)
 
     def criar_vertice_acumulo(self, data_referencia):
         """
@@ -2213,26 +2275,28 @@ class BoletaCPR(BaseModel):
             val = 0
 
             if data_referencia == self.data_inicio:
-                mov = self.valor_presente(data_referencia)
-            elif data_referencia == self.data_pagamento:
-                mov = -self.valor_presente(data_referencia)
+                mov = self.valor_presente(data_referencia) + mov
+            if data_referencia == self.data_pagamento:
+                mov = -self.valor_presente(data_referencia) + mov
 
             if data_referencia == self.data_pagamento:
                 val = 0
             else:
                 val = self.valor_presente(data_referencia)
+            if mov != 0 or val != 0:
+                # Necessário criar vértice apenas se algum dos valores não é zero.
+                vertice = fm.Vertice(
+                    fundo=self.fundo,
+                    custodia=self.encontrar_custodiante(),
+                    quantidade=1,
+                    valor=val,
+                    preco=1,
+                    movimentacao=mov,
+                    data=data_referencia,
+                    content_object=self
+                )
 
-            vertice = fm.Vertice(
-                fundo=self.fundo,
-                custodia=self.encontrar_custodiante(),
-                quantidade=1,
-                valor=val,
-                preco=1,
-                movimentacao=mov,
-                data=data_referencia,
-                content_object=self
-            )
-            vertice.save()
+                vertice.save()
 
     def criar_vertice_emprestimo(self, data_referencia):
 
@@ -2254,6 +2318,128 @@ class BoletaCPR(BaseModel):
                 content_object=self
             )
             vertice.save()
+
+    def criar_vertice_taxa_adm(self, data_referencia):
+        """
+        Tratamento da taxa de administração:
+            - Se a data referencia for maior que o início da vigência e menor ou
+        igual à data final de vigencia, a taxa acumula.
+                - Caso ela esteja no primeiro dia útil do mês, calcula o valor
+            com base na carteira do último dia útil.
+                - Caso ela esteja no meio do período de vigência, pega o valor
+            cheio atual e soma a ele o valor da taxa de administração calculada
+            com base no dia anterior.
+            - Caso ela se encontre além do fim da data de vigência e antes da
+        data de pagamento, ela permanece a mesma.
+                - Cria uma provisão com o valor da taxa cheia, com data de
+            pagamento igual à data de pagamento do CPR.
+
+        """
+        # Ainda não criou nenhum tipo de vértice. Evita double counting.
+        if self.relacao_vertice.filter(data=data_referencia).exists() == False:
+            # Capitalização diária.
+            if self.capitalizacao == BoletaCPR.CAPITALIZACAO[0][0]:
+                from dateutil.relativedelta import relativedelta
+                """
+                Checa se a data está dentro do intervalo da vigencia.
+                """
+                if data_referencia >= self.data_vigencia_inicio and \
+                    data_referencia <= self.data_vigencia_fim:
+
+                    cal = self.fundo.calendario
+                    dia_anterior = cal.dia_trabalho(data_referencia, -1)
+                    """
+                    Checa se preciso criar acumular ou calcular a taxa do zero.
+                    """
+                    if data_referencia <= self.data_vigencia_fim and \
+                        data_referencia > self.data_vigencia_inicio:
+                        """
+                        Calcula a taxa de administração e cria a provisão.
+                        """
+                        # Pega carteira do dia anterior. Não pego pela mais recente para que
+                        # seja possível reprocessar a cota de um determinado dia.
+                        carteira = fm.Carteira.objects.get(fundo=self.fundo, \
+                            data=dia_anterior)
+                        # Pega o vértice relativo ao dia anterior
+                        content = ContentType.objects.get_for_model(BoletaCPR)
+                        # Pega o valor da taxa pelo vértice, pois o valor da
+                        # boleta é atualizado diariamente.
+                        vertice_taxa_adm_anterior = fm.Vertice.objects.get(fundo=self.fundo,
+                            data=dia_anterior, content_type=content,\
+                            object_id=self.id)
+                        taxa_acumulada = vertice_taxa_adm_anterior.valor
+                        adm_dia = (carteira.pl*self.fundo.taxa_administracao/100)/252
+                        adm_dia.quantize(decimal.Decimal('1.00'))
+                        adm_dia_min = self.fundo.taxa_adm_minima/cal.dias_uteis_mes(data_referencia)
+                        taxa_acumulada = decimal.Decimal(-max(adm_dia_min, adm_dia) + taxa_acumulada).quantize(decimal.Decimal('1.00'))
+                        self.valor_cheio = taxa_acumulada
+                        self.save()
+                        vertice = fm.Vertice(
+                            fundo=self.fundo,
+                            custodia=self.encontrar_custodiante(),
+                            quantidade=1,
+                            valor=taxa_acumulada,
+                            preco=1,
+                            movimentacao=0,
+                            data=data_referencia,
+                            content_object=self
+                        )
+                        vertice.save()
+
+                    elif data_referencia == primeiro_dia_util_mes:
+                        # Cria um vértice com a taxa de administração calculada
+                        taxa_fundo = self.fundo.taxa_administracao/100
+                        carteira = fm.Carteira.objects.get(fundo=self, data=cal.dia_trabalho(data_referencia, -1))
+                        adm_dia = (carteira.pl*self.fundo.taxa_administracao/100)/252
+                        adm_dia_min = self.fundo.taxa_adm_minima/cal.dias_uteis_mes(data_referencia)
+                        taxa_adm = -decimal.Decimal(max(adm_dia, adm_dia_min)).quantize(decimal.Decimal('1.00'))
+
+                        vertice = fm.Vertice(
+                            fundo=self.fundo,
+                            custodia=self.encontrar_custodiante(),
+                            quantidade=1,
+                            valor=taxa_adm,
+                            preco=1,
+                            movimentacao=0,
+                            data=data_referencia,
+                            content_object=self
+                        )
+                        vertice.save()
+
+                elif data_referencia > self.data_vigencia_fim and \
+                    data_referencia <= self.data_pagamento:
+                    """
+                    Se não é data do pagamento, não cria movimentação.
+                    """
+                    desc_prov = "Taxa de administração"
+                    # Verifica se há provisão criada. Se não houver, cria uma.
+                    if self.relacao_provisao.exists() == False:
+                        prov_taxa_adm = Provisao(
+                            descricao=self.TAXA_ADM_TEXTO,
+                            caixa_alvo=self.fundo.caixa_padrao,
+                            fundo=self.fundo,
+                            data_pagamento=self.data_pagamento,
+                            financeiro=self.valor_cheio,
+                            estado=BoletaProvisao.ESTADO[0][0]
+                        )
+                    # Cria vértice.
+                    if self.relacao_vertice.filter(data=data_referencia).exists() == False:
+                        mov = 0
+                        val = self.valor_cheio
+                        if data_referencia == self.data_pagamento:
+                            mov = -self.valor_cheio
+                            val = 0
+                        vertice = fm.Vertice(
+                            fundo=self.fundo,
+                            custodia=self.encontrar_custodiante(),
+                            quantidade=1,
+                            valor=val,
+                            preco=1,
+                            movimentacao=mov,
+                            data=data_referencia,
+                            content_object=self
+                        )
+                        vertice.save()
 
     def encontrar_custodiante(self):
         """
@@ -2305,7 +2491,10 @@ class BoletaPassivo(BaseModel):
     data_liquidacao = models.DateField()
     operacao = models.CharField(max_length=15, choices=OPERACAO)
     fundo = models.ForeignKey('fundo.Fundo', on_delete=models.PROTECT)
-    cota = models.DecimalField(max_digits=15, decimal_places=6, null=True, blank=True)
+    # Valor da cota do fundo
+    cota = models.DecimalField(max_digits=15, decimal_places=8, null=True, blank=True)
+    # Relaciona a boleta de passivo com todos os certificados de passivo gerados
+    # ou consumidos.
     certificado_passivo = models.ManyToManyField('fundo.CertificadoPassivo',
         blank=True, null=True)
 
@@ -2381,6 +2570,11 @@ class BoletaPassivo(BaseModel):
             - Resgate - liquidação anterior à cotização.
         """
         if self.boleta_CPR.all().exists() == False:
+            financeiro = 0
+            if self.operacao == self.OPERACAO[0][0]:
+                financeiro = -abs(self.valor)
+            else:
+                financeiro = abs(self.valor)
             if (self.operacao == self.OPERACAO[0][0] and self.data_cotizacao < self.data_liquidacao) or \
                 (self.operacao != self.OPERACAO[0][0] and self.data_liquidacao < self.data_cotizacao):
                 if self.data_cotizacao < self.data_liquidacao:
@@ -2392,7 +2586,7 @@ class BoletaPassivo(BaseModel):
                 cpr = BoletaCPR(
                     descricao=self.operacao + ": " + self.fundo.nome,
                     fundo=self.fundo,
-                    valor_cheio=abs(self.valor),
+                    valor_cheio=financeiro,
                     data_inicio=data_inicio,
                     data_pagamento=data_pagamento,
                     content_object=self
@@ -2407,7 +2601,7 @@ class BoletaPassivo(BaseModel):
                 cpr = BoletaCPR(
                     descricao=self.operacao + ": " + self.fundo.nome,
                     fundo=self.fundo,
-                    valor_cheio=-abs(self.valor),
+                    valor_cheio=financeiro,
                     data_inicio=data_inicio,
                     data_pagamento=data_pagamento,
                     content_object=self
@@ -2428,9 +2622,10 @@ class BoletaPassivo(BaseModel):
             certificado = fm.CertificadoPassivo(
                 cotista=self.cotista,
                 qtd_cotas=qtd,
-                valor_cota=self.cota,
+                valor_cota=decimal.Decimal(self.cota).quantize(decimal.Decimal('1.000000')),
                 cotas_aplicadas=qtd,
-                data=self.data_cotizacao
+                data=self.data_cotizacao,
+                fundo=self.fundo
             )
             certificado.full_clean()
             certificado.save()
@@ -2448,7 +2643,8 @@ class BoletaPassivo(BaseModel):
             cotas_totais = abs(self.valor/self.cota)
             cotas_consumidas = cotas_totais
             while cotas_consumidas > 0:
-                certificado_consumido = fm.CertificadoPassivo.objects.filter(cotas_aplicadas__gt=0).earliest('data')
+                certificado_consumido = fm.CertificadoPassivo.objects.filter(cotas_aplicadas__gt=0,\
+                    fundo=self.fundo).earliest('data')
                 if cotas_consumidas > certificado_consumido.cotas_aplicadas:
                     cotas_consumidas -= certificado_consumido.cotas_aplicadas
                     certificado_consumido.cotas_aplicadas = 0

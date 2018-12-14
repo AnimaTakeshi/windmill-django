@@ -85,7 +85,7 @@ class Calendario(models.Model):
         feriados = list(self.feriados.filter(data__gte=data_referencia)
             .values_list('data', flat=True))
 
-        return np.busday_offset(data_referencia, dias, roll='backward',
+        return np.busday_offset(data_referencia, dias, roll='forward',
             holidays=feriados).astype(datetime.datetime)
 
     def dias_corridos_total(self, data_inicio, data_fim):
@@ -138,3 +138,12 @@ class Calendario(models.Model):
             count += 1
             fim_do_mes += mes
         return count
+
+    def dias_uteis_mes(self, data_referencia):
+        """
+        Retorna a quantidade de dias úteis no mês da data de referencia
+        """
+        mes_ant = relativedelta(months=-1)
+        ultimo_dia_mes_passado = self.fim_mes_util(data_referencia + mes_ant)
+        ultimo_dia_mes_corrente = self.fim_mes_util(data_referencia)
+        return self.dia_trabalho_total(ultimo_dia_mes_passado, ultimo_dia_mes_corrente) - 1

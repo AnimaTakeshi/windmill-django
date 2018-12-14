@@ -39,6 +39,8 @@ class Ativo(models.Model):
     nome = models.CharField(max_length=25, unique=True)
     bbg_ticker = models.CharField(max_length=25, unique=True, null=True, blank=True, default=None)
     pais = models.ForeignKey(Pais, on_delete=models.PROTECT, null=True, blank=True)
+    # Moeda que representa a apresentação final do ativoself.
+    moeda = models.ForeignKey(Moeda, on_delete=models.PROTECT, null=True, blank=True)
     isin = models.CharField(max_length=25, unique=True, null=True, blank=True)
     vertice = GenericRelation('fundo.Vertice')
     descricao = models.TextField(null=True, blank=True)
@@ -63,7 +65,7 @@ class Renda_Fixa(Ativo):
     vencimento = models.DateField(default=datetime.date.max)
     cupom = models.DecimalField(max_digits=7, decimal_places=5, null=True,
         default=0)
-    info = models.CharField("informação de mercado", max_length=3,
+    info = models.CharField("informação de mercado", max_length=5,
         choices=TIPO_INFO_CHOICES, default="PU")
     periodo = models.IntegerField("periodicidade do cupom em meses", default=0)
 
@@ -101,7 +103,6 @@ class Cambio(Ativo):
 class Caixa(Ativo):
 
     # Indica a moeda do caixa
-    moeda = models.ForeignKey('Moeda', on_delete=models.PROTECT)
     zeragem = models.ForeignKey(Ativo, blank=True, null=True,
         on_delete=models.PROTECT, default=None, related_name='caixas')
     custodia = models.ForeignKey('fundo.Custodiante', on_delete=models.PROTECT)
@@ -134,14 +135,16 @@ class Fundo_Local(Ativo):
         verbose_name_plural = 'Fundos Locais'
 
     def gerido(self):
+        if self.gestao == None:
+            return False
         return self.gestao.gestora.anima
 
 class Fundo_Offshore(Ativo):
 
-    data_cotizacao_resgate = models.DurationField()
-    data_liquidacao_resgate = models.DurationField()
-    data_cotizacao_aplicacao = models.DurationField()
-    data_liquidacao_aplicacao = models.DurationField()
+    data_cotizacao_resgate = models.DurationField(null=True,blank=True)
+    data_liquidacao_resgate = models.DurationField(null=True,blank=True)
+    data_cotizacao_aplicacao = models.DurationField(null=True,blank=True)
+    data_liquidacao_aplicacao = models.DurationField(null=True,blank=True)
     gestao = models.ForeignKey('fundo.Fundo', on_delete=models.PROTECT, null=True, blank=True)
 
     class Meta:

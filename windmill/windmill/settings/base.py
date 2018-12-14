@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'widget_tweaks',
     'ativos',
     'boletagem',
+    'configuracao',
     'fundo',
     'calendario',
     'mercado'
