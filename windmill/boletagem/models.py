@@ -60,31 +60,31 @@ import fundo.models as fm
 import mercado.models as mm
 
 # Create your models here.
-class BaseModelQuerySet(models.query.QuerySet):
-    def delete(self):
-        return super(BaseModelQuerySet, self).update(deletado_em=timezone.now())
-
-    def hard_delete(self):
-        return super(BaseModelQuerySet, self).delete()
-
-    def alive(self):
-        return self.filter(deletado_em=None)
-
-    def dead(self):
-        return self.exclude(deletado_em=None)
-
-class BaseModelManager(models.Manager):
-    def __init__(self, *args, **kwargs):
-        self.alive_only = kwargs.pop('alive_only', True)
-        super(BaseModelManager, self).__init__(*args, **kwargs)
-
-    def get_queryset(self):
-        if self.alive_only:
-            return BaseModelQuerySet(self.model).filter(deletado_em=None)
-        return BaseModelQuerySet(self.model)
-
-    def hard_delete(self):
-        return self.get_queryset().hard_delete()
+# class BaseModelQuerySet(models.query.QuerySet):
+#     def delete(self):
+#         return super(BaseModelQuerySet, self).update(deletado_em=timezone.now())
+#
+#     def hard_delete(self):
+#         return super(BaseModelQuerySet, self).delete()
+#
+#     def alive(self):
+#         return self.filter(deletado_em=None)
+#
+#     def dead(self):
+#         return self.exclude(deletado_em=None)
+#
+# class BaseModelManager(models.Manager):
+#     def __init__(self, *args, **kwargs):
+#         self.alive_only = kwargs.pop('alive_only', True)
+#         super(BaseModelManager, self).__init__(*args, **kwargs)
+#
+#     def get_queryset(self):
+#         if self.alive_only:
+#             return BaseModelQuerySet(self.model).filter(deletado_em=None)
+#         return BaseModelQuerySet(self.model)
+#
+#     def hard_delete(self):
+#         return self.get_queryset().hard_delete()
 
 class BaseModel(models.Model):
     """
@@ -95,18 +95,18 @@ class BaseModel(models.Model):
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
 
-    objects = BaseModelManager()
-    all_objects = BaseModelManager(alive_only=False)
+    # objects = BaseModelManager()
+    # all_objects = BaseModelManager(alive_only=False)
 
     class Meta:
         abstract = True
 
-    def delete(self):
-        self.deletado_em = timezone.now()
-        self.save()
-
-    def hard_delete(self):
-        super(BaseModel, self).delete()
+    # def delete(self):
+    #     self.deletado_em = timezone.now()
+    #     self.save()
+    #
+    # def hard_delete(self):
+    #     super(BaseModel, self).delete()
 
 
 
@@ -2137,6 +2137,7 @@ class BoletaCPR(BaseModel):
 
             if self.capitalizacao == self.CAPITALIZACAO[0][0]:
                 if data_referencia > self.data_vigencia_fim:
+                    # resultado = self.valor_cheio?
                     resultado = (self.fundo.calendario.dia_trabalho_total(self.data_vigencia_inicio, self.data_vigencia_fim))*self.valor_parcial
                     return resultado.quantize(decimal.Decimal('1.00'))
                 elif data_referencia < self.data_vigencia_inicio:
@@ -2375,7 +2376,8 @@ class BoletaCPR(BaseModel):
                             data=dia_anterior, content_type=content,\
                             object_id=self.id)
                         taxa_acumulada = vertice_taxa_adm_anterior.valor
-                        adm_dia = (carteira.pl*self.fundo.taxa_administracao/100)/252
+
+                        adm_dia = (carteira.pl_nao_gerido(dia_anterior)*self.fundo.taxa_administracao/100)/252
                         adm_dia.quantize(decimal.Decimal('1.00'))
                         adm_dia_min = self.fundo.taxa_adm_minima/cal.dias_uteis_mes(data_referencia)
                         taxa_acumulada = decimal.Decimal(-max(adm_dia_min, adm_dia) + taxa_acumulada).quantize(decimal.Decimal('1.00'))

@@ -42,6 +42,7 @@ class BoletaAcaoAdmin(ImportExportModelAdmin):
 
     list_display = ('acao', 'data_operacao', 'data_liquidacao', 'corretora',
         'fundo', 'operacao', 'quantidade', 'preco', 'caixa_alvo', )
+    exclude = ('deletado_em',)
 
     ordering = ('acao', 'fundo')
 
@@ -89,9 +90,19 @@ class BoletaRendaFixaLocalAdmin(ImportExportModelAdmin):
     )
     list_display = ('ativo', 'data_operacao', 'data_liquidacao', 'corretora',
         'fundo', 'operacao', 'quantidade', 'preco', 'caixa_alvo')
+    exclude = ('deletado_em',)
 
     class Meta:
         model = models.BoletaRendaFixaLocal
+
+@admin.register(models.BoletaRendaFixaOffshore)
+class BoletaRendaFixaOffAdmin(ImportExportModelAdmin):
+    list_display = ('ativo', 'data_operacao', 'data_liquidacao', 'corretora',\
+        'custodia', 'corretagem', 'fundo', 'operacao', 'quantidade', \
+        'nominal', 'taxa', 'preco', 'caixa_alvo')
+    exclude = ('deletado_em',)
+
+
 
 @admin.register(models.BoletaCPR)
 class BoletaCPRAdmin(ImportExportModelAdmin):
@@ -99,6 +110,8 @@ class BoletaCPRAdmin(ImportExportModelAdmin):
         model = models.BoletaCPR
 
     list_display = ('descricao', 'fundo', 'valor_cheio', 'valor_parcial', 'data_inicio', 'data_pagamento')
+    exclude = ('deletado_em', 'content_type', 'object_id')
+
 
 @admin.register(models.BoletaProvisao)
 class BoletaProvisaoAdmin(ImportExportModelAdmin):
@@ -106,9 +119,42 @@ class BoletaProvisaoAdmin(ImportExportModelAdmin):
         model = models.BoletaProvisao
 
     list_display = ('descricao', 'caixa_alvo', 'fundo', 'data_pagamento', 'financeiro')
+    exclude = ('content_type', 'object_id', 'deletado_em')
 
 @admin.register(models.BoletaEmprestimo)
 class BoletaEmprestimoAdmin(ImportExportModelAdmin):
     list_display = ('ativo', 'data_operacao', 'fundo' ,'data_vencimento', 'data_liquidacao',
         'operacao' ,'quantidade', 'taxa', 'preco', 'financeiro')
-    exclude = ('relacao_quantidade', 'relacao_movimentacao')
+    exclude = ('relacao_quantidade', 'relacao_movimentacao', 'deletado_em')
+
+@admin.register(models.BoletaFundoLocal)
+class BoletaFundoLocalAdmin(ImportExportModelAdmin):
+    list_display = ('ativo', 'data_operacao', 'data_cotizacao', 'data_liquidacao',\
+        'fundo', 'operacao', 'liquidacao', 'financeiro', 'quantidade', \
+        'preco', 'caixa_alvo', 'custodia')
+
+    exclude = ('deletado_em',)
+
+    class Meta:
+        model = models.BoletaFundoLocal
+
+@admin.register(models.BoletaFundoOffshore)
+class BoletaFundoOffAdmin(ImportExportModelAdmin):
+    list_display = ('ativo', 'estado', 'data_operacao', 'data_cotizacao',\
+        'data_liquidacao', 'fundo', 'financeiro', 'preco', 'quantidade',
+        'operacao', 'caixa_alvo', 'custodia')
+
+    exclude = ('deletado_em',)
+
+@admin.register(models.BoletaPassivo)
+class BoletaPassivoAdmin(ImportExportModelAdmin):
+    list_display = ('cotista', 'valor' ,'data_operacao', 'data_cotizacao', \
+        'data_liquidacao' ,'operacao', 'fundo', 'cota', )
+    exclude = ('certificado_passivo' ,'content_type', 'object_id', 'deletado_em')
+
+@admin.register(models.BoletaCambio)
+class BoletaCambioAdmin(ImportExportModelAdmin):
+    list_display = ('fundo', 'caixa_origem', 'caixa_destino', 'data_operacao', \
+        'cambio', 'taxa', 'financeiro_origem', 'financeiro_final', \
+        'data_liquidacao_origem', 'data_liquidacao_destino')
+    exclude = ('deletado_em',)

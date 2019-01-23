@@ -5,6 +5,11 @@ Responsabilidades deste app:
     - Executar funções relacionadas ao fundo:
         - Fechamento diário para cálculo de cota.
         - Fechamento mensal para cálculo de cota.
+
+PROCESSO DE CÁLCULO DA COTA:
+    1) Fechamento das boletas: As boletas devem ser fechadas para gerar as
+quantidades e movimentações correspondentes.
+    2)
 """
 import decimal
 from django.utils import timezone
@@ -17,32 +22,32 @@ import pandas as pd
 
 # Create your models here.
 
-class BaseModelQuerySet(models.query.QuerySet):
-    def delete(self):
-        return super(BaseModelQuerySet, self).update(deletado_em=timezone.now())
-
-    def hard_delete(self):
-        return super(BaseModelQuerySet, self).delete()
-
-    def alive(self):
-        return self.filter(deletado_em=None)
-
-    def dead(self):
-        return self.exclude(deletado_em=None)
-
-class BaseModelManager(models.Manager):
-    def __init__(self, *args, **kwargs):
-        self.alive_only = kwargs.pop('alive_only', True)
-        super(BaseModelManager, self).__init__(*args, **kwargs)
-
-    def get_queryset(self):
-        if self.alive_only:
-            return BaseModelQuerySet(self.model).filter(deletado_em=None)
-        return BaseModelQuerySet(self.model)
-
-    def hard_delete(self):
-        return self.get_queryset().hard_delete()
-
+# class BaseModelQuerySet(models.query.QuerySet):
+#     def delete(self):
+#         return super(BaseModelQuerySet, self).update(deletado_em=timezone.now())
+#
+#     def hard_delete(self):
+#         return super(BaseModelQuerySet, self).delete()
+#
+#     def alive(self):
+#         return self.filter(deletado_em=None)
+#
+#     def dead(self):
+#         return self.exclude(deletado_em=None)
+#
+# class BaseModelManager(models.Manager):
+#     def __init__(self, *args, **kwargs):
+#         self.alive_only = kwargs.pop('alive_only', True)
+#         super(BaseModelManager, self).__init__(*args, **kwargs)
+#
+#     def get_queryset(self):
+#         if self.alive_only:
+#             return BaseModelQuerySet(self.model).filter(deletado_em=None)
+#         return BaseModelQuerySet(self.model)
+#
+#     def hard_delete(self):
+#         return self.get_queryset().hard_delete()
+#
 class BaseModel(models.Model):
     """
     Classe base para criar campos comuns a todas as classes, como 'criado em'
@@ -52,23 +57,25 @@ class BaseModel(models.Model):
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
 
-    objects = BaseModelManager()
-    all_objects = BaseModelManager(alive_only=False)
+    # objects = BaseModelManager()
+    # all_objects    = BaseModelManager(alive_only=False)
 
     class Meta:
         abstract = True
 
-    def delete(self):
-        self.deletado_em = timezone.now()
-        self.save()
-
-    def hard_delete(self):
-        super(BaseModel, self).delete()
+    # def delete(self):
+    #     self.deletado_em = timezone.now()
+    #     self.save()
+    #
+    # def hard_delete(self):
+    #     super(BaseModel, self).delete()
 
 class Fundo(BaseModel):
     """
     Descreve informações relevantes para um fundo.
     TODO: INSERIR DATA DE EXERCÍCIO SOCIAL
+    TODO: CRIAR CPR E PROVISÃO DE PROVENTOS
+    TODO: ZERAGEM DE CAIXA
     """
     # Categorias do fundo.
     CATEGORIAS = (
@@ -134,6 +141,44 @@ class Fundo(BaseModel):
     def __str__(self):
         return '%s' % (self.nome)
 
+    def verificar_proventos(self, data_referencia):
+        """
+        Verifica se há novos proventos de acordo com os ativos na carteira.
+        """
+        pass
+
+    def zeragem_de_caixa(self, data_referencia):
+        """
+        Caso o caixa faça zeragem (investe em um fundo/compromissada para não
+        deixar dinheiro parado), cria uma boleta de provisão indicando o
+        quanto foi pago pela zeragem.
+        """
+        # Verifica se há caixa no dia anterior.
+        import ativos.models as am
+        data_anterior = self.calendario.dia_trabalho(data_referencia, -1)
+        tipo_caixa = ContentType.objects.get_for_model(am.Caixa)
+        caixas = Vertice.objects.filter(content_type=tipo_caixa, \
+            data=data_anterior)
+        if caixas.count() != 0:
+            for caixa in caixas:
+                if caixa.content_object.zeragem != None:
+                    import boletagem.models as bm
+                    nome_boleta = "Zeragem " + caixa.content_object.nome
+                    # Se a boleta de zeragem ainda não foi feita, cria a boleta
+                    if bm.BoletaProvisao.objects.filter(descricao__contains=nome_boleta, \
+                        data_pagamento=data_referencia).exists() == False:
+                        retorno = caixa.content_object.zeragem.retorno_do_periodo(data_anterior, data_referencia)
+                        financeiro_zeragem = retorno*caixa.quantidade
+                        provisao = bm.BoletaProvisao(
+                            descricao=nome_boleta,
+                            caixa_alvo=caixa.content_object,
+                            fundo=self,
+                            data_pagamento=data_referencia,
+                            financeiro=decimal.Decimal(financeiro_zeragem).quantize(decimal.Decimal('1.00'))
+                        )
+                        provisao.full_clean()
+                        provisao.save()
+
     """
     Fechamento do fundo
     """
@@ -184,6 +229,7 @@ class Fundo(BaseModel):
             - Atualização do número de cotas, caso tenha havido uma alteração
         devido à movimentação.
         """
+        self.zeragem_de_caixa(data_referencia)
         self.fechar_boletas_do_fundo(data_referencia)
         self.criar_vertices(data_referencia)
 
@@ -394,6 +440,7 @@ class Fundo(BaseModel):
                         'corretora_id':qtd.content_object.caixa_alvo.corretora.id})
 
                 else:
+                    # Caso seja uma boleta de provisão
                     dicionario_boleta_custodia.append({'id':qtd.id, \
                     'custodia_id':qtd.content_object.caixa_alvo.custodia.id, \
                     'corretora_id':qtd.content_object.caixa_alvo.corretora.id})
@@ -511,7 +558,6 @@ class Fundo(BaseModel):
 
         carteira_qtd = self.juntar_quantidades(data_referencia)
         carteira_mov = self.juntar_movimentacoes(data_referencia)
-
         df_cambios = self.buscar_cambios(data_referencia)
 
         lista_qtds = pd.DataFrame()
@@ -519,6 +565,7 @@ class Fundo(BaseModel):
             # Antes de criar os vértices, precisamos consolidar as quantidades e
             # ver quais ativos já estão com posição zerada, consolidando o dataframe
             # por tipo_id (id do ativo) e custodia_id(id da custódia do ativo.)
+
             carteira_qtd_completa = (carteira_qtd.groupby(['nome', 'fundo', \
                 'data', 'custodia_id', 'corretora_id', 'tipo_id', 'id_x',\
                 'tipo_quantidade_id', 'moeda'])['qtd'].sum().to_frame())
@@ -744,7 +791,8 @@ class Fundo(BaseModel):
 
         # print('LISTA DE VÉRTICES:')
         # vertices = vertices.merge(boletas, left_on='object_id', right_on='id').drop(['id'], axis=1)
-
+        import pdb
+        pdb.set_trace()
         return vertices
 
     def calcular_cota(self, data_referencia):
@@ -948,11 +996,27 @@ class Carteira(BaseModel):
         total_cotas = CertificadoPassivo.total_cotas_aplicadas(fundo=self.fundo,\
             data_referencia=self.data)
         self.cota = decimal.Decimal(self.pl/total_cotas).quantize(decimal.Decimal('1.00000000'))
+        import pdb
+
         self.save()
         vertices = Vertice.objects.filter(fundo=self.fundo, data=self.data)
         for vertice in vertices:
             self.vertices.add(vertice)
+        pdb.set_trace()
         self.save()
+
+    def pl_nao_gerido(self, data_referencia):
+        """
+        Recebe uma data de referência, e retorna o PL do fundo descontando ativos
+        que são geridos.
+        """
+        import ativos.models as am
+        pl_gerido = 0
+        for v in self.vertices.all():
+            if type(v.content_object) == am.Fundo_Local:
+                if v.content_object.gerido() == True:
+                    pl_gerido += v.valor
+        return self.pl - pl_gerido
 
 class Vertice(BaseModel):
     """

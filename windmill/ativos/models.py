@@ -15,7 +15,7 @@ import fundo.models
 # Create your models here.
 
 class Moeda(models.Model):
-    nome = models.CharField(max_length=15, unique=True)
+    nome = models.CharField(max_length=25, unique=True)
     codigo = models.CharField(max_length=3, unique=True)
 
     class Meta:
@@ -35,6 +35,9 @@ class Pais(models.Model):
         verbose_name_plural = 'Países'
 
 class Ativo(models.Model):
+    """
+    TODO: CÁLCULO DE RETORNO AJUSTADO A DIVIDENDOS
+    """
 
     nome = models.CharField(max_length=25, unique=True)
     bbg_ticker = models.CharField(max_length=25, unique=True, null=True, blank=True, default=None)
@@ -57,6 +60,16 @@ class Ativo(models.Model):
             self.bbg_ticker = None
         super(Ativo, self).save(*args, **kwargs)
 
+    def retorno_do_periodo(self, data_inicio, data_fim, dividendos=False):
+        import mercado.models as mm
+        if dividendos == False:
+            preco_inicio = mm.Preco.objects.get(ativo=self, \
+                data_referencia=data_inicio)
+            preco_fim = mm.Preco.objects.get(ativo=self, data_referencia=data_fim)
+            return preco_fim.preco_fechamento/preco_inicio.preco_fechamento - 1
+        else:
+            return 1
+
 class Renda_Fixa(Ativo):
     TIPO_INFO_CHOICES = (
         ("PU", "PU"),
@@ -75,7 +88,8 @@ class Renda_Fixa(Ativo):
 class Acao(Ativo):
     TIPO_CHOICES=(
         ("PN", "PN"),
-        ("ON", "ON")
+        ("ON", "ON"),
+        ("ADR", "ADR")
     )
 
     tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, null=True)
@@ -89,7 +103,7 @@ class Acao(Ativo):
 class Cambio(Ativo):
     """
     Não é um ativo em si, mas como possui valor (taxa de conversão entre
-    moedas), decidimos caracterizá-lo como tal para facilitar.
+    moedas) diário, decidimos caracterizá-lo como tal para facilitar.
     """
 
     moeda_origem = models.ForeignKey(Moeda, on_delete=models.PROTECT,
@@ -115,13 +129,13 @@ class Fundo_Local(Ativo):
 
     CNPJ = models.CharField(max_length=18, null=True, blank=True)
     # Indica quanto tempo depois do pedido a cotização de um resgate é feita
-    data_cotizacao_resgate = models.DurationField()
+    data_cotizacao_resgate = models.DurationField(null=True, blank=True)
     # Indica quanto tempo depois do pedido a liquidação de um resgate é feita
-    data_liquidacao_resgate = models.DurationField()
+    data_liquidacao_resgate = models.DurationField(null=True, blank=True)
     # Indica quanto tempo depois do pedido a cotização de uma aplicação é feita
-    data_cotizacao_aplicacao = models.DurationField()
+    data_cotizacao_aplicacao = models.DurationField(null=True, blank=True)
     # Indica quanto tempo depois do pedido a liquidação de uma aplicação é feita
-    data_liquidacao_aplicacao = models.DurationField()
+    data_liquidacao_aplicacao = models.DurationField(null=True, blank=True)
     banco = models.CharField(max_length=3, null=True, blank=True)
     agencia = models.CharField(max_length=6, null=True, blank=True)
     conta_corrente = models.CharField(max_length=7, null=True, blank=True)

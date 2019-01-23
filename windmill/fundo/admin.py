@@ -6,14 +6,12 @@ from import_export import resources, fields
 from import_export.admin import ImportExportModelAdmin
 from import_export.widgets import ForeignKeyWidget
 from django.contrib.contenttypes.admin import GenericTabularInline
-from .models import Fundo, Administradora, Gestora, Distribuidora, Corretora, Contato, Carteira, Vertice
-from ativos.models import Pais
+from .models import Fundo, Administradora, Gestora, Custodiante, Corretora, Contato, Carteira, Vertice, Cotista
+import ativos.models as am
 import ativos.forms
 
 # Register your models here.
 admin.site.register(Gestora)
-admin.site.register(Distribuidora)
-admin.site.register(Corretora)
 admin.site.register(Contato)
 admin.site.register(Carteira)
 admin.site.register(Vertice)
@@ -29,11 +27,6 @@ class FundoResource(resources.ModelResource):
         attribute='gestora',
         widget=ForeignKeyWidget(Gestora, 'nome')
     )
-    distribuidora = fields.Field(
-        column_name='distribuidora',
-        attribute='distribuidora',
-        widget=ForeignKeyWidget(Distribuidora, 'nome')
-    )
     corretora = fields.Field(
         column_name='corretora',
         attribute='corretora',
@@ -42,7 +35,12 @@ class FundoResource(resources.ModelResource):
     pais = fields.Field(
         column_name='pais',
         attribute='pais',
-        widget=ForeignKeyWidget(Pais, 'nome')
+        widget=ForeignKeyWidget(am.Pais, 'nome')
+    )
+    caixa_padrao = fields.Field(
+        column_name='caixa_padrao',
+        attribute='caixa_padrao',
+        widget=ForeignKeyWidget(am.Caixa, 'nome')
     )
 
     class Meta:
@@ -63,6 +61,7 @@ class FundoAdmin(ImportExportModelAdmin):
     list_filter = ('administradora', 'gestora', 'pais', 'categoria')
     search_fields = ('nome',)
     ordering = ('pais', 'nome')
+    exclude = ('deletado_em' ,)
 
 class ContatoInLine(GenericTabularInline):
     model = Contato
@@ -72,3 +71,16 @@ class AdministradoraAdmin(ImportExportModelAdmin):
     inlines = [
         ContatoInLine,
     ]
+
+@admin.register(Corretora)
+class CorretoraAdmin(ImportExportModelAdmin):
+    list_display = ('id', 'nome')
+
+@admin.register(Custodiante)
+class CustodianteAdmin(ImportExportModelAdmin):
+    list_display = ('id', 'nome')
+
+@admin.register(Cotista)
+class CotistaAdmin(ImportExportModelAdmin):
+    list_display = ('nome', 'n_doc', 'fundo_cotista')
+    exclude = ('deletado_em' ,)

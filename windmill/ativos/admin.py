@@ -9,36 +9,70 @@ from .models import Ativo, Pais, Moeda, Renda_Fixa, Acao, Cambio, Caixa, Fundo_L
 import ativos.forms
 # Register your models here.
 
-admin.site.register(Pais)
-admin.site.register(Moeda)
+
 admin.site.site_header = "Windmill"
 admin.site.site_title = "Portal Windmill"
 admin.site.index_title = "Portal Windmill - Anima Investimentos"
+
+class MoedaResource(resources.ModelResource):
+    class Meta:
+        model = Moeda
+        fields = ('id', 'nome', 'codigo')
+        export_order = ('id', 'nome', 'codigo')
+
+@admin.register(Moeda)
+class MoedaAdmin(ImportExportModelAdmin):
+    resource_class = MoedaResource
+
+class PaisResource(resources.ModelResource):
+    moeda = fields.Field(
+        column_name='moeda',
+        attribute='moeda',
+        widget=ForeignKeyWidget(Moeda,'codigo')
+    )
+    class Meta:
+        model=Pais
+        fields=('id', 'nome', 'moeda')
+        export_order=('id', 'nome', 'moeda')
+
+@admin.register(Pais)
+class PaisAdmin(ImportExportModelAdmin):
+    resource_class=PaisResource
 
 class AcaoResource(resources.ModelResource):
     pais = fields.Field(
         column_name='pais',
         attribute='pais',
         widget=ForeignKeyWidget(Pais, 'nome'))
+    moeda = fields.Field(
+        column_name='moeda',
+        attribute='moeda',
+        widget= ForeignKeyWidget(Moeda, 'codigo')
+    )
 
     class Meta:
         model = Acao
-        fields = ('nome', 'bbg_ticker', 'pais', 'tipo', 'id')
-        export_order = ('id', 'nome', 'bbg_ticker', 'pais', 'tipo')
+        fields = ('id', 'nome', 'bbg_ticker', 'moeda', 'pais', 'tipo')
+        export_order = ('id', 'nome', 'bbg_ticker', 'moeda', 'pais', 'tipo')
 
 @admin.register(Acao)
 class AcaoAdmin(ImportExportModelAdmin):
     resource_class = AcaoResource
-    list_display = ('nome', 'bbg_ticker', 'pais', 'tipo')
-    list_filter = ('pais', 'tipo')
+    list_display = ('nome', 'bbg_ticker', 'moeda', 'tipo')
+    list_filter = ('moeda', 'pais', 'tipo')
     search_fields = ('nome', 'bbg_ticker')
-    ordering = ('pais', 'nome')
+    ordering = ('pais', 'nome', 'moeda')
 
 class RendaFixaResource(resources.ModelResource):
     pais = fields.Field(
         column_name='pais',
         attribute='pais',
         widget=ForeignKeyWidget(Pais, 'nome')
+    )
+    moeda = fields.Field(
+        column_name='moeda',
+        attribute='moeda',
+        widget=ForeignKeyWidget(Moeda, 'codigo')
     )
 
     class Meta:
@@ -47,6 +81,7 @@ class RendaFixaResource(resources.ModelResource):
             'id',
             'nome',
             'bbg_ticker',
+            'moeda',
             'pais',
             'vencimento',
             'cupom',
@@ -69,11 +104,6 @@ class RendaFixaAdmin(ImportExportModelAdmin):
     ordering = ('pais', 'vencimento', 'nome')
 
 class CambioResource(resources.ModelResource):
-    pais = fields.Field(
-        column_name='pais',
-        attribute='pais',
-        widget=ForeignKeyWidget(Pais, 'nome')
-    )
     moeda_origem = fields.Field(
         column_name='moeda_origem',
         attribute='moeda_origem',
@@ -91,7 +121,6 @@ class CambioResource(resources.ModelResource):
             'id',
             'nome',
             'bbg_ticker',
-            'pais',
             'moeda_origem',
             'moeda_destino'
         )
@@ -101,22 +130,91 @@ class CambioAdmin(ImportExportModelAdmin):
     resource_class = CambioResource
     list_display = ('nome',
         'bbg_ticker',
-        'pais',
         'moeda_origem',
         'moeda_destino')
-    list_filter = ('pais', 'moeda_origem', 'moeda_destino')
+    list_filter = ('moeda_origem', 'moeda_destino')
     search_fields = ('nome', 'bbg_ticker', 'moeda_origem', 'moeda_destino')
-    ordering = ('pais', 'moeda_origem', 'moeda_destino')
+    ordering = ('moeda_origem', 'moeda_destino')
+
+
+class CaixaResource(resources.ModelResource):
+    import fundo.models as fm
+    pais = fields.Field(
+        column_name='pais',
+        attribute='pais',
+        widget=ForeignKeyWidget(Pais, 'nome'))
+    moeda = fields.Field(
+        column_name='moeda',
+        attribute='moeda',
+        widget=ForeignKeyWidget(Moeda, 'codigo')
+    )
+    custodia = fields.Field(
+        column_name='custodia',
+        attribute='custodia',
+        widget=ForeignKeyWidget(fm.Custodiante, 'nome')
+    )
+    corretora = fields.Field(
+        column_name='corretora',
+        attribute='corretora',
+        widget=ForeignKeyWidget(fm.Corretora, 'nome')
+    )
+    zeragem = fields.Field(
+        column_name='zeragem',
+        attribute='zeragem',
+        widget=ForeignKeyWidget(Ativo, 'nome')
+    )
+
+    class Meta:
+        model = Caixa
+        fields = ('id', 'nome', 'moeda', 'corretora', 'custodia')
+        export_order = ('id', 'nome', 'moeda', 'corretora', 'custodia')
 
 
 @admin.register(Caixa)
 class CaixaAdmin(ImportExportModelAdmin):
-    list_display = ('id', 'nome', 'moeda', 'zeragem')
+    resource_class = CaixaResource
+    list_display = ('id', 'nome', 'moeda', 'custodia', 'corretora', 'zeragem')
+
+class FundoLocalResource(resources.ModelResource):
+    pais = fields.Field(
+        column_name='pais',
+        attribute='pais',
+        widget=ForeignKeyWidget(Pais,'nome')
+    )
+    moeda = fields.Field(
+        column_name='moeda',
+        attribute='moeda',
+        widget=ForeignKeyWidget(Moeda, 'codigo')
+    )
+
+
+    class Meta:
+        model = Fundo_Local
+        fields = ('nome', 'bbg_ticker', 'pais', 'moeda', 'banco', 'agencia',\
+            'conta_corrente', 'digito')
 
 @admin.register(Fundo_Local)
 class FundoLocalAdmin(ImportExportModelAdmin):
+    resource_class=FundoLocalResource
     list_display = ('id', 'nome', 'pais', 'banco', 'agencia', 'conta_corrente' ,'digito')
+
+class FundoOffshoreResource(resources.ModelResource):
+    pais = fields.Field(
+        column_name='pais',
+        attribute='pais',
+        widget=ForeignKeyWidget(Pais,'nome')
+    )
+    moeda = fields.Field(
+        column_name='moeda',
+        attribute='moeda',
+        widget=ForeignKeyWidget(Moeda, 'codigo')
+    )
+
+    class Meta:
+        model = Fundo_Offshore
+        fields = ('nome', 'bbg_ticker', 'pais', 'moeda')
 
 @admin.register(Fundo_Offshore)
 class FundoOffshoreAdmin(ImportExportModelAdmin):
+    resource_class=FundoOffshoreResource
     list_display = ('id', 'nome', 'pais')
