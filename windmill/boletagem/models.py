@@ -2487,6 +2487,12 @@ class BoletaPassivo(BaseModel):
     de todos os certificados de passivo.
     """
 
+    """
+    TODO: ATUALIZAR BOLETA - CASO SEJA UMA BOLETA PROVENIENTE DE UMA OUTRA
+    BOLETA DE FUNDOS, TENTA ATUALIZAR DE ACORDO COM O VALOR DA COTA NA
+    BOLETA DE FUNDOS.
+    """
+
     OPERACAO = (
         ('Aplicação', 'Aplicação'),
         ('Resgate', 'Resgate'),

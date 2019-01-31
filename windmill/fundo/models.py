@@ -249,6 +249,11 @@ class Fundo(BaseModel):
         self.fechar_boletas_fundo_local_como_ativo(data_referencia)
         self.fechar_boletas_fundo_off_como_ativo(data_referencia)
         self.fechar_boletas_passivo(data_referencia)
+
+        """
+        Conferêcia de carteira para verificar dividendos
+        """
+
         self.fechar_boletas_CPR(data_referencia)
         self.fechar_boletas_provisao(data_referencia)
 
@@ -805,6 +810,41 @@ class Fundo(BaseModel):
         carteira.inicializar(vertices)
         carteira.save()
 
+    def reprocessar_cota(self, data_referencia):
+        """
+        Na ordem do fechamento, atualizar as boletas de CPR, provisão,
+        Quantidades, Movimentações e Vértices com data igual à data de
+        referencia.
+
+        REPROCESSAMENTO ALTERNATIVO: DELETAR TUDO E REFAZER:
+
+        Dada uma data de referência, para reprocessar a cota, é necessário
+        fazer o processo inverso do fechamento.
+        Na ordem:
+            1) Deletar a Carteira.
+            2) Deletar os vértices com data igual à data de referência.
+            3) A partir das boletas de provisão:
+                1) Buscar as quantidades criadas e deletá-las
+                2) Buscar as movimentações criadas e deleta-las
+            4) A partir das boletas de CPR:
+                1) (Os vértices criados já foram deletados no passo anterior)
+            5) A partir das boletas de passivo:
+                Em caso de aporte:
+                    1) Apagar o certificado de passivo criado e ligado à boleta
+                Em caso de resgate: A partir da diferença do número de cotas
+                da carteira do dia anterior ao resgate e posterior ao resgtate,
+                conseguimos o número de cotas resgatadas. Desfaz o resgate,
+                reatribuindo cotas aos certificados ligados à boleta de passivo,
+                partindo do certificado mais recente até o mais antigo.
+                Em caso de resgate total: A partir da quantidade de cotas da
+                carteira anterior, conseguimos o número de cotas resgatadas.
+                Então fazemos como um resgate normal.
+                    2) Apagar as boletas de provisão e CPR criadas.
+            6) Apaga boletas de passivo que possuam content_object ligadas a
+            ela, pois são boletas frutos do fechamento de outras boletas.
+            7)
+        """
+        pass
 
 class Administradora(models.Model):
     """
@@ -1051,6 +1091,9 @@ class Vertice(BaseModel):
     valor = models.DecimalField(decimal_places=2, max_digits=20)
     # Preço do ativo.
     preco = models.DecimalField(decimal_places=6, max_digits=20)
+    # Data relativa ao preço utilizada
+    data_preco = models.DateField()
+    # Valor da movimentação do ativo/CPR.
     movimentacao = models.DecimalField(decimal_places=6, max_digits=20, default=decimal.Decimal(0))
     data = models.DateField()
     # Caso a moeda original do ativo seja diferente da do fundo, indica o valor usado.

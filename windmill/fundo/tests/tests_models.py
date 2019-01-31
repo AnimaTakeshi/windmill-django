@@ -3390,6 +3390,14 @@ class ItatiaiaTests(TestCase):
             financeiro=boleta_CPR_DVD_NATU3.valor_cheio,
             estado=bm.BoletaProvisao.ESTADO[0][1]
         )
+        import mercado.models as mm
+        provento_natu3 = mommy.make('mercado.Provento',
+            ativo=NATU,
+            data_com=self.data_carteira,
+            data_ex=self.data_carteira_2,
+            data_pagamento=self.data_carteira_3,
+            tipo_provento=mm.Provento.TIPO[0],
+        )
 
 
 
