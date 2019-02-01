@@ -13,23 +13,34 @@
       <li class="nav-item active">
         <a class="nav-link" href="{% url 'home' %}">Home <span class="sr-only">(current)</span></a>
       </li>
+      <li class="nav-item">
+        <a class="nav-link" href="#">Gestão de Fundos</a>
+      </li>
       <li class="nav-item dropdown">
         <a class="nav-link dropdown-toggle" data-toggle="dropdown" href="#" role="button" aria-haspopup="true" aria-expanded="false">Cadastro</a>
-        <div class="dropdown-menu">          
-          <a class="dropdown-item" href="#">Ativo</a>
-          <a class="dropdown-item" href="#">Fundo</a>
-          <a class="dropdown-item" href="#">Something else here</a>
-          <div class="dropdown-divider"></div>
-          <a class="dropdown-item" href="#">Separated link</a>
+        <div class="dropdown-menu">
+          <a class="dropdown-item" href="#">Ativos</a>
+          <a class="dropdown-item" href="#">Fundos</a>
+          <a class="dropdown-item" href="#">Mercado</a>
         </div>
       </li>
-      <li class="nav-item">
-        <a class="nav-link" href="#">Pricing</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link" href="#">About</a>
+      <li class="nav-item dropdown">
+        <a class="nav-link dropdown-toggle" data-toggle="dropdown" href="#" role="button" aria-haspopup="true" aria-expanded="false">Boletagem de Operações</a>
+        <div class="dropdown-menu">
+          <a class="dropdown-item" href="#">Ações</a>
+          <a class="dropdown-item" href="#">Renda Fixa Local</a>
+          <a class="dropdown-item" href="#">Renda Fixa Offshore</a>
+          <a class="dropdown-item" href="#">Cotas de Fundo Local</a>
+          <a class="dropdown-item" href="#">Cotas de Fundo Offshore</a>
+          <a class="dropdown-item" href="#">Empréstimo de ações</a>
+          <a class="dropdown-item" href="#">Provisões/Despesas</a>
+          <a class="dropdown-item" href="#">Contas a Pagar/Receber</a>
+          <a class="dropdown-item" href="#">Câmbio/Transferência de Caixa</a>
+          <a class="dropdown-item" href="#">Aporte/Resgate</a>
+        </div>
       </li>
     </ul>
+    <a class="nav-item" href="{% url 'logout' %}">Log Out</a>
   </div>
 
 </nav>

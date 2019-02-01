@@ -141,6 +141,7 @@ PHONENUMBER_DB_FORMAT = 'E164'
 
 # Authentication login landing page
 LOGIN_REDIRECT_URL = 'home'
+LOGIN_URL = ''
 
 # Crispy_forms template pack
 CRISPY_TEMPLATE_PACK = 'bootstrap4'

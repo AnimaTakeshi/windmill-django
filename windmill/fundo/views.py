@@ -3,6 +3,7 @@ from django.http import HttpResponse
 from django.views.generic import DetailView, ListView, TemplateView
 from django.views.generic.edit import CreateView, UpdateView, FormView
 from django.template import Context
+from django.contrib.auth.decorators import login_required
 
 from .models import Fundo
 
