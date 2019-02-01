@@ -50,7 +50,8 @@ INSTALLED_APPS = [
     'configuracao',
     'fundo',
     'calendario',
-    'mercado'
+    'mercado',
+    'crispy_forms',
 ]
 
 MIDDLEWARE = [
@@ -137,6 +138,12 @@ IMPORT_EXPORT_USE_TRANSACTIONS = True
 
 # Django-phonenumber field configuration
 PHONENUMBER_DB_FORMAT = 'E164'
+
+# Authentication login landing page
+LOGIN_REDIRECT_URL = 'home'
+
+# Crispy_forms template pack
+CRISPY_TEMPLATE_PACK = 'bootstrap4'
 
 # Activating django-heroku
 django_heroku.settings(locals())

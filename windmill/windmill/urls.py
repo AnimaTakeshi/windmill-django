@@ -15,8 +15,14 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from django.contrib.auth import views as auth_views
+
+from fundo import views as fundo_views
 
 urlpatterns = [
+    path('', auth_views.login, name='login'),
+    path(r'^logout/$', auth_views.logout, name='logout'),
+    path(r'home/', fundo_views.HomePageView.as_view(), name='home'),
     path('controle/', include('fundo.urls', namespace='fundos')),
     path('admin/', admin.site.urls),
     path('ativos/', include('ativos.urls', namespace='ativos')),

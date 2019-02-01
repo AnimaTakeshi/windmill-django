@@ -6,8 +6,6 @@ from . import views
 app_name='fundos'
 
 urlpatterns = [
-    path('', views.fundo_home, name='fundos_home'),
-    path('trial/', views.HomePageView.as_view(), name='home'),
     path('base/', TemplateView.as_view(template_name='base.html'), name='base'),
     path('base_site/', TemplateView.as_view(template_name='base_site.html'), name='base_site'),
     # path('acoes/cadastro', views.CadastroAcaoView.as_view(), name='cadastro_acao'),
