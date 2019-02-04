@@ -1,0 +1,23 @@
+{% extends "base_site.html" %}
+
+{% block local %}
+<div class="container">
+  <table class="table table-hover">
+    <thead>
+      <tr>
+        <th scope="col">Fundo</th>
+        <th scope="col">Data da última carteira</th>
+        <th scope="col">Cota</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for fundo in fundos %}
+      <tr class="table-default">
+        <th scope="row">{{ fundo.nome }}</th>
+        <td>Data</td>
+        <td>Cota</td>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -17,13 +17,15 @@ from django.contrib import admin
 from django.urls import path, include
 from django.contrib.auth import views as auth_views
 
+from . import views as home_views
 from fundo import views as fundo_views
+from ativos import views as ativos_views
 
 urlpatterns = [
-    path('', auth_views.login, name='login'),
-    path(r'^logout/$', auth_views.logout, name='logout'),
-    path(r'home/', fundo_views.HomePageView.as_view(), name='home'),
-    path('controle/', include('fundo.urls', namespace='fundos')),
-    path('admin/', admin.site.urls),
+    path('', home_views.custom_login, name='login'),
+    path('logout/', auth_views.logout, name='logout'),
+    path('home/', fundo_views.HomePageView.as_view(), name='home'),
+    path('home/processos/', include('fundo.urls', namespace='fundos')),
+    path('admin/', admin.site.urls, name='cadastro'),
     path('ativos/', include('ativos.urls', namespace='ativos')),
 ]

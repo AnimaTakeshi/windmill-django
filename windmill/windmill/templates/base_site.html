@@ -13,30 +13,34 @@
       <li class="nav-item active">
         <a class="nav-link" href="{% url 'home' %}">Home <span class="sr-only">(current)</span></a>
       </li>
-      <li class="nav-item">
-        <a class="nav-link" href="#">Gestão de Fundos</a>
+      <li class="nav-item dropdown">
+        <a class="nav-link dropdown-toggle" data-toggle="dropdown" href="#" role="button" aria-haspopup="true" aria-expanded="false">Processos de Fundos</a>
+        <div class="dropdown-menu">
+          <a class="dropdown-item" href="{% url 'fundos:fechamento' %}">Fechamento</a>
+        </div>
       </li>
       <li class="nav-item dropdown">
         <a class="nav-link dropdown-toggle" data-toggle="dropdown" href="#" role="button" aria-haspopup="true" aria-expanded="false">Cadastro</a>
         <div class="dropdown-menu">
-          <a class="dropdown-item" href="#">Ativos</a>
-          <a class="dropdown-item" href="#">Fundos</a>
-          <a class="dropdown-item" href="#">Mercado</a>
+          <a class="dropdown-item" href="/admin/ativos">Ativos</a>
+          <a class="dropdown-item" href="/admin/fundo">Fundos</a>
+          <a class="dropdown-item" href="/admin/mercado">Mercado</a>
+          <a class="dropdown-item" href="/admin/calendario">Calendário</a>
         </div>
       </li>
       <li class="nav-item dropdown">
         <a class="nav-link dropdown-toggle" data-toggle="dropdown" href="#" role="button" aria-haspopup="true" aria-expanded="false">Boletagem de Operações</a>
         <div class="dropdown-menu">
-          <a class="dropdown-item" href="#">Ações</a>
-          <a class="dropdown-item" href="#">Renda Fixa Local</a>
-          <a class="dropdown-item" href="#">Renda Fixa Offshore</a>
-          <a class="dropdown-item" href="#">Cotas de Fundo Local</a>
-          <a class="dropdown-item" href="#">Cotas de Fundo Offshore</a>
-          <a class="dropdown-item" href="#">Empréstimo de ações</a>
-          <a class="dropdown-item" href="#">Provisões/Despesas</a>
-          <a class="dropdown-item" href="#">Contas a Pagar/Receber</a>
-          <a class="dropdown-item" href="#">Câmbio/Transferência de Caixa</a>
-          <a class="dropdown-item" href="#">Aporte/Resgate</a>
+          <a class="dropdown-item" href="/admin/boletagem/boletaacao/">Ações</a>
+          <a class="dropdown-item" href="/admin/boletagem/boletarendafixalocal/">Renda Fixa Local</a>
+          <a class="dropdown-item" href="/admin/boletagem/boletarendafixaoffshore/">Renda Fixa Offshore</a>
+          <a class="dropdown-item" href="/admin/boletagem/boletafundolocal/">Cotas de Fundo Local</a>
+          <a class="dropdown-item" href="/admin/boletagem/boletafundooffshore/">Cotas de Fundo Offshore</a>
+          <a class="dropdown-item" href="/admin/boletagem/boletaemprestimo/">Empréstimo de ações</a>
+          <a class="dropdown-item" href="/admin/boletagem/boletaprovisao/">Provisões/Despesas</a>
+          <a class="dropdown-item" href="/admin/boletagem/boletacpr/">Contas a Pagar/Receber</a>
+          <a class="dropdown-item" href="/admin/boletagem/boletacambio/">Câmbio/Transferência de Caixa</a>
+          <a class="dropdown-item" href="/admin/boletagem/boletapassivo/">Aporte/Resgate</a>
         </div>
       </li>
     </ul>
@@ -46,5 +50,5 @@
 </nav>
 
 
-{% block nav-global %}{% endblock %}
+{% block local %}{% endblock %}
 {% endblock %}

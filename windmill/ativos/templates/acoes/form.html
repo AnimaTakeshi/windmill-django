@@ -1,0 +1,9 @@
+{% extends 'base_site.html'%}
+
+{% block local %}
+  <form method="post">
+    {% csrf_token %}
+    {{ form }}
+    <button type="submit" class="btn btn-success">Salvar</button>
+  </form>
+{% end block %}

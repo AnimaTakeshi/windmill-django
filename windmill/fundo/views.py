@@ -5,12 +5,18 @@ from django.views.generic.edit import CreateView, UpdateView, FormView
 from django.template import Context
 from django.contrib.auth.decorators import login_required
 
-from .models import Fundo
+from .models import Fundo, Gestora
 
 # Create your views here.
-def home(request):
-    return HttpResponse('Controladoria Anima')
 
 class HomePageView(ListView):
     model = Fundo
     template_name='base_site.html'
+
+def fechamento(request):
+    try:
+        anima = Gestora.objects.get(anima=True)
+        fundos = Fundo.objects.filter(gestora=anima)
+    except:
+        fundos = Fundo.objects.none()
+    return render(request, 'fechamento.html', {'fundos': fundos})

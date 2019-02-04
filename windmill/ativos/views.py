@@ -37,3 +37,7 @@ class UploadCSVAcaoView(FormView):
     form_class = AcaoCSVForm
     template_name = 'acoes/cadastro.html'
     fields = '__all__'
+
+class AcaoCreateView(CreateView):
+    model = Acao
+    template_name = 'acoes/form.html'
