@@ -162,9 +162,6 @@ class Fundo(BaseModel):
         from ativos import models as am
         from boletagem import models as bm
         import math
-        import pdb
-
-
 
         proventos = mm.Provento.objects.filter(data_ex=data_referencia)
         if proventos:
@@ -180,7 +177,6 @@ class Fundo(BaseModel):
                 if provento.ativo in acoes:
                     vertice = vertices[acoes.index(provento.ativo)]
                     # Dividendos/JSCP
-                    pdb.set_trace()
                     if provento.tipo_provento == mm.Provento.TIPO[0][0] or provento.tipo_provento == mm.Provento.TIPO[1][0]:
                         # Cria CPR
                         CPR = bm.BoletaCPR(
@@ -226,7 +222,6 @@ class Fundo(BaseModel):
                             objeto_quantidade = provento.ativo,
                         )
                         qtd.save()
-
                     # Direito de subscrição
 
     def zeragem_de_caixa(self, data_referencia):
@@ -237,29 +232,33 @@ class Fundo(BaseModel):
         """
         # Verifica se há caixa no dia anterior.
         import ativos.models as am
+        import configuracao.models as cm
+        caixas_zeragem = cm.ConfigZeragem.objects.filter(fundo=self)
         data_anterior = self.calendario.dia_trabalho(data_referencia, -1)
         tipo_caixa = ContentType.objects.get_for_model(am.Caixa)
-        caixas = Vertice.objects.filter(content_type=tipo_caixa, \
+        vertices_caixa = Vertice.objects.filter(content_type=tipo_caixa, \
             data=data_anterior)
-        if caixas.count() != 0:
-            for caixa in caixas:
-                if caixa.content_object.zeragem != None:
-                    import boletagem.models as bm
-                    nome_boleta = "Zeragem " + caixa.content_object.nome
-                    # Se a boleta de zeragem ainda não foi feita, cria a boleta
-                    if bm.BoletaProvisao.objects.filter(descricao__contains=nome_boleta, \
-                        data_pagamento=data_referencia).exists() == False:
-                        retorno = caixa.content_object.zeragem.retorno_do_periodo(data_anterior, data_referencia)
-                        financeiro_zeragem = retorno*caixa.quantidade
-                        provisao = bm.BoletaProvisao(
-                            descricao=nome_boleta,
-                            caixa_alvo=caixa.content_object,
-                            fundo=self,
-                            data_pagamento=data_referencia,
-                            financeiro=decimal.Decimal(financeiro_zeragem).quantize(decimal.Decimal('1.00'))
-                        )
-                        provisao.full_clean()
-                        provisao.save()
+
+        for vertice in vertices_caixa:
+            if caixas_zeragem.filter(caixa=vertice.content_object):
+                import boletagem.models as bm
+                zeragem = caixas_zeragem.get(caixa=vertice.content_object).indice_zeragem
+                nome_boleta = "Zeragem " + vertice.content_object.nome
+                # Se a boleta de zeragem ainda não foi feita, cria a boleta
+                if bm.BoletaProvisao.objects.filter(descricao__contains=nome_boleta, \
+                    data_pagamento=data_referencia).exists() == False:
+                    retorno = zeragem.retorno_do_periodo(data_anterior, data_referencia)
+                    financeiro_zeragem = retorno*vertice.quantidade
+                    provisao = bm.BoletaProvisao(
+                        descricao=nome_boleta,
+                        caixa_alvo=vertice.content_object,
+                        fundo=self,
+                        data_pagamento=data_referencia,
+                        financeiro=decimal.Decimal(financeiro_zeragem).quantize(decimal.Decimal('1.00')),
+                        estado=bm.BoletaProvisao.ESTADO[2][0]
+                    )
+                    provisao.full_clean()
+                    provisao.save()
 
     """
     Fechamento do fundo
@@ -651,7 +650,6 @@ class Fundo(BaseModel):
         import ativos.models as am
         import mercado.models as mm
         import configuracao.models as cm
-        import pdb
         import math
 
         carteira_qtd = self.juntar_quantidades(data_referencia)
@@ -889,8 +887,6 @@ class Fundo(BaseModel):
 
         # print('LISTA DE VÉRTICES:')
         # vertices = vertices.merge(boletas, left_on='object_id', right_on='id').drop(['id'], axis=1)
-        import pdb
-        pdb.set_trace()
         return vertices
 
     def calcular_cota(self, data_referencia):

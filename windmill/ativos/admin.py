@@ -158,11 +158,6 @@ class CaixaResource(resources.ModelResource):
         attribute='corretora',
         widget=ForeignKeyWidget(fm.Corretora, 'nome')
     )
-    zeragem = fields.Field(
-        column_name='zeragem',
-        attribute='zeragem',
-        widget=ForeignKeyWidget(Ativo, 'nome')
-    )
 
     class Meta:
         model = Caixa
@@ -173,7 +168,7 @@ class CaixaResource(resources.ModelResource):
 @admin.register(Caixa)
 class CaixaAdmin(ImportExportModelAdmin):
     resource_class = CaixaResource
-    list_display = ('id', 'nome', 'moeda', 'custodia', 'corretora', 'zeragem')
+    list_display = ('id', 'nome', 'moeda', 'custodia', 'corretora')
 
 class FundoLocalResource(resources.ModelResource):
     pais = fields.Field(

@@ -11,12 +11,14 @@
   <div class="navbar-collapse collapse" id="navbarColor01" style="">
     <ul class="navbar-nav mr-auto">
       <li class="nav-item active">
-        <a class="nav-link" href="{% url 'home' %}">Home <span class="sr-only">(current)</span></a>
+        <a class="nav-link" href="{% url 'home' %}">Home</a>
       </li>
       <li class="nav-item dropdown">
         <a class="nav-link dropdown-toggle" data-toggle="dropdown" href="#" role="button" aria-haspopup="true" aria-expanded="false">Processos de Fundos</a>
         <div class="dropdown-menu">
           <a class="dropdown-item" href="{% url 'fundos:fechamento' %}">Fechamento</a>
+          <a class="dropdown-item" href="#">Consultar Carteira</a>
+          <a class="dropdown-item" href="#">Extrato de Passivo</a>
         </div>
       </li>
       <li class="nav-item dropdown">

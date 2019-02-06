@@ -121,8 +121,6 @@ class Cambio(Ativo):
 class Caixa(Ativo):
 
     # Indica a moeda do caixa
-    zeragem = models.ForeignKey(Ativo, blank=True, null=True,
-        on_delete=models.PROTECT, default=None, related_name='caixas')
     custodia = models.ForeignKey('fundo.Custodiante', on_delete=models.PROTECT)
     corretora = models.ForeignKey('fundo.Corretora', on_delete=models.PROTECT)
 

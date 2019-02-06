@@ -1462,8 +1462,7 @@ class VeredaTests(TestCase):
             pais=brasil,
             moeda=real,
             custodia=btg_cust,
-            corretora=btg_corr,
-            zeragem=cdi
+            corretora=btg_corr
         )
         jeff_cash = mommy.make('ativos.caixa',
             nome='Caixa Jefferies',
@@ -1672,6 +1671,12 @@ class VeredaTests(TestCase):
             fundo=self.veredas,
         )
         configuration.cambio.add(bmfxclco)
+
+        config_zeragem = mommy.make('configuracao.ConfigZeragem',
+            fundo=self.veredas,
+            caixa=btg_cash,
+            indice_zeragem=cdi
+        )
 
         """
         Preços de mercado
@@ -3139,6 +3144,12 @@ class ItatiaiaTests(TestCase):
         )
         configuration.cambio.add(bmfxclco)
 
+        mommy.make('configuracao.ConfigZeragem',
+            fundo=self.itatiaia,
+            caixa=btg_cash,
+            indice_zeragem=cdi
+        )
+
         """
         Preços de mercado
         """
@@ -3154,6 +3165,11 @@ class ItatiaiaTests(TestCase):
         mommy.make('mercado.Preco',
             ativo=MA,
             preco_fechamento=decimal.Decimal(200).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira
+        )
+        mommy.make('mercado.Preco',
+            ativo=cdi,
+            preco_fechamento=decimal.Decimal(0.999754).quantize(decimal.Decimal('1.000000')),
             data_referencia=self.data_carteira
         )
         mommy.make('mercado.Preco',
@@ -3188,6 +3204,11 @@ class ItatiaiaTests(TestCase):
             data_referencia=self.data_carteira_2
         )
         mommy.make('mercado.Preco',
+            ativo=cdi,
+            preco_fechamento=decimal.Decimal(1.000).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_2
+        )
+        mommy.make('mercado.Preco',
             ativo=soberano,
             preco_fechamento=decimal.Decimal(39.616631).quantize(decimal.Decimal('1.000000')),
             data_referencia=self.data_carteira_2
@@ -3211,6 +3232,11 @@ class ItatiaiaTests(TestCase):
         mommy.make('mercado.Preco',
             ativo=NATU,
             preco_fechamento=decimal.Decimal(28.35).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_3
+        )
+        mommy.make('mercado.Preco',
+            ativo=cdi,
+            preco_fechamento=decimal.Decimal(1.000246).quantize(decimal.Decimal('1.000000')),
             data_referencia=self.data_carteira_3
         )
         mommy.make('mercado.Preco',
@@ -3261,18 +3287,18 @@ class ItatiaiaTests(TestCase):
             preco=decimal.Decimal(28.10).quantize(decimal.Decimal('1.00')),
             caixa_alvo=self.itatiaia.caixa_padrao
         )
-        boletaMA = mommy.make('boletagem.BoletaAcao',
-            acao=MA,
-            data_operacao=self.data_carteira,
-            data_liquidacao=self.data_carteira_3,
-            custodia=persh_cust,
-            corretora=jeff_corr,
-            operacao=bm.BoletaAcao.OPERACAO[0][0],
-            fundo=self.itatiaia,
-            quantidade=10320689,
-            preco=decimal.Decimal(200).quantize(decimal.Decimal('1.00')),
-            caixa_alvo=jeff_cash
-        )
+        # boletaMA = mommy.make('boletagem.BoletaAcao',
+        #     acao=MA,
+        #     data_operacao=self.data_carteira,
+        #     data_liquidacao=self.data_carteira_3,
+        #     custodia=persh_cust,
+        #     corretora=jeff_corr,
+        #     operacao=bm.BoletaAcao.OPERACAO[0][0],
+        #     fundo=self.itatiaia,
+        #     quantidade=10320689,
+        #     preco=decimal.Decimal(200).quantize(decimal.Decimal('1.00')),
+        #     caixa_alvo=jeff_cash
+        # )
 
         # Boletas Fundos locais
         boleta_Honor = mommy.make('boletagem.BoletaFundoLocal',

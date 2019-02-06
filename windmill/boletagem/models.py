@@ -1926,7 +1926,8 @@ class BoletaProvisao(BaseModel):
 
     ESTADO = (
         ("Pendente", "Pendente"),
-        ("Liquidado", "Liquidado")
+        ("Liquidado", "Liquidado"),
+        ("Zeragem", "Zeragem")
     )
 
     descricao = models.CharField("Descrição", max_length=50)
@@ -1969,7 +1970,8 @@ class BoletaProvisao(BaseModel):
         """
         Cria a movimentação do caixa
         """
-        if self.relacao_movimentacao.exists() == False:
+        if self.relacao_movimentacao.exists() == False and \
+            self.estado != self.ESTADO[2][0]:
             from fundo.models import Quantidade, Movimentacao
             mov = Movimentacao(
                 valor=self.financeiro,
