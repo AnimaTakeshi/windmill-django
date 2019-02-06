@@ -19,6 +19,7 @@ from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelatio
 from django.contrib.contenttypes.models import ContentType
 from phonenumber_field.modelfields import PhoneNumberField
 import pandas as pd
+import datetime
 
 # Create your models here.
 
@@ -143,9 +144,90 @@ class Fundo(BaseModel):
 
     def verificar_proventos(self, data_referencia):
         """
-        Verifica se há novos proventos de acordo com os ativos na carteira.
+        Verifica se há novos proventos de acordo com os ativos na carteira do dia anterior.
+        1) Verifica se há novos proventos com ex-date igual à data de referência.
+        2) Verifica se, dentre os ativos que possuem proventos, há algum que
+        pertença à carteira do dia anterior.
+        3) Se encontrar algum ativo, processa o provento de acordo:
+            1) Dividendos e Juros sobre Capital Próprio
+                Cria uma boleta de CPR e provisão de acordo
+            2) Stock Split/stock dividend
+                Cria quantidades de acordo
+            3) Stock Inplit
+                Cria uma quantidade negativa
+            4) Direitos de subscrição
+                Cria uma quantidade do direito de subscrição.
         """
-        pass
+        from mercado import models as mm
+        from ativos import models as am
+        from boletagem import models as bm
+        import math
+        import pdb
+
+
+
+        proventos = mm.Provento.objects.filter(data_ex=data_referencia)
+        if proventos:
+            # Pega carteira do dia anterior como referência.
+            carteira = Carteira.objects.get(data=self.calendario.dia_trabalho(data_referencia, -1), fundo=self)
+            acoes = []
+            vertices = []
+            for vertice in carteira.vertices.all():
+                if type(vertice.content_object) == am.Acao:
+                    acoes.append(vertice.content_object)
+                    vertices.append(vertice)
+            for provento in proventos:
+                if provento.ativo in acoes:
+                    vertice = vertices[acoes.index(provento.ativo)]
+                    # Dividendos/JSCP
+                    pdb.set_trace()
+                    if provento.tipo_provento == mm.Provento.TIPO[0][0] or provento.tipo_provento == mm.Provento.TIPO[1][0]:
+                        # Cria CPR
+                        CPR = bm.BoletaCPR(
+                            descricao = provento.tipo_provento + " " + provento.ativo.nome + " ",
+                            valor_cheio = vertice.quantidade * provento.valor_liquido,
+                            data_inicio = data_referencia,
+                            data_pagamento = provento.data_pagamento,
+                            fundo = vertice.fundo,
+                            content_object = provento
+                        )
+                        CPR.save()
+                        # Cria Provento
+                        # Busca caixa onde o provento será pago
+                        caixa = am.Caixa.objects.get(custodia=vertice.custodia,\
+                            corretora=vertice.corretora)
+                        provisao = bm.BoletaProvisao(
+                            descricao = provento.tipo_provento + " " + provento.ativo.nome + " ",
+                            caixa_alvo = caixa,
+                            fundo = vertice.fundo,
+                            data_pagamento = provento.data_pagamento,
+                            financeiro =  vertice.quantidade * provento.valor_liquido,
+                            content_object = provento,
+                        )
+                        provisao.save()
+                        # Cria movimentação do ativo, em contrapartida ao CPR
+                        mov = Movimentacao(
+                            valor = -abs(decimal.Decimal(vertice.quantidade * provento.valor_liquido).quantize(decimal.Decimal('1.000000'))),
+                            fundo = vertice.fundo,
+                            data = data_referencia,
+                            content_object = provento,
+                            objeto_movimentacao = provento.ativo
+                        )
+                        mov.full_clean()
+                        mov.save()
+                    # Stock Split/Stock dividend/Inplit
+                    elif provento.tipo_provento == mm.Provento.TIPO[2][0] or \
+                        provento.tipo_provento == mm.Provento.TIPO[4][0]:
+                        qtd = Quantidade(
+                            qtd = math.floor((provento.valor_bruto - 1) * vertice.quantidade),
+                            fundo = vertice.fundo,
+                            data = provento.data_ex,
+                            content_object = provento,
+                            objeto_quantidade = provento.ativo,
+                        )
+                        qtd.save()
+
+                    # Direito de subscrição
 
     def zeragem_de_caixa(self, data_referencia):
         """
@@ -509,6 +591,7 @@ class Fundo(BaseModel):
             # buscando a custodia dos ativos movimentados
             import boletagem.models as bm
             import ativos.models as am
+            import mercado.models as mm
             dicionario_boleta_custodia = []
             for m in mov:
                 if type(m.content_object) != bm.BoletaProvisao:
@@ -518,6 +601,16 @@ class Fundo(BaseModel):
                         dicionario_boleta_custodia.append({'id':m.id, \
                             'custodia_id':m.content_object.custodia_id, \
                             'corretora_id':m.content_object.corretora.id,\
+                            'descricao':m.__str__()})
+                    elif type(m.content_object) == mm.Provento:
+                        # No caso de provento, como a boleta de provisao possuirá
+                        # a mesma referência da movimentação, podemos buscar pela
+                        # boleta de provisão que aponta para o provento.
+                        provisao = bm.BoletaProvisao.objects.get(content_type=m.content_type, \
+                            object_id=m.object_id)
+                        dicionario_boleta_custodia.append({'id':m.id, \
+                            'custodia_id':provisao.caixa_alvo.custodia.id, \
+                            'corretora_id':provisao.caixa_alvo.corretora.id,\
                             'descricao':m.__str__()})
                     else:
                         dicionario_boleta_custodia.append({'id':m.id, \
@@ -1036,13 +1129,15 @@ class Carteira(BaseModel):
         total_cotas = CertificadoPassivo.total_cotas_aplicadas(fundo=self.fundo,\
             data_referencia=self.data)
         self.cota = decimal.Decimal(self.pl/total_cotas).quantize(decimal.Decimal('1.00000000'))
-        import pdb
 
         self.save()
         vertices = Vertice.objects.filter(fundo=self.fundo, data=self.data)
         for vertice in vertices:
             self.vertices.add(vertice)
+
+        import pdb
         pdb.set_trace()
+
         self.save()
 
     def pl_nao_gerido(self, data_referencia):
@@ -1092,7 +1187,7 @@ class Vertice(BaseModel):
     # Preço do ativo.
     preco = models.DecimalField(decimal_places=6, max_digits=20)
     # Data relativa ao preço utilizada
-    data_preco = models.DateField()
+    data_preco = models.DateField(default=datetime.date.today)
     # Valor da movimentação do ativo/CPR.
     movimentacao = models.DecimalField(decimal_places=6, max_digits=20, default=decimal.Decimal(0))
     data = models.DateField()
@@ -1108,6 +1203,37 @@ class Vertice(BaseModel):
     class Meta:
         ordering = ['fundo']
         verbose_name_plural = 'Vértices'
+
+    def __str__(self):
+        from boletagem import models as bm
+
+        objeto = ''
+        if type(self.content_object) == bm.BoletaCPR:
+            objeto = self.content_object.descricao
+        else:
+            objeto = self.content_object.nome
+
+        custodia_texto = ''
+        if self.custodia != None:
+            custodia_texto = self.custodia.nome
+
+        corretora_texto = ''
+        if self.corretora != None:
+            corretora_texto = self.corretora.nome
+
+        d = {
+            "fundo":self.fundo.nome,
+            "custodia":custodia_texto,
+            "corretora":corretora_texto,
+            "quantidade":str(self.quantidade),
+            "valor":str(self.valor),
+            "preco":str(self.preco),
+            "movimentacao":str(self.movimentacao),
+            "data":self.data,
+            "cambio":str(self.cambio),
+            "objeto":objeto
+        }
+        return str(d)
 
 class Quantidade(BaseModel):
     """

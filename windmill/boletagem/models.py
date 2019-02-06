@@ -2281,27 +2281,28 @@ class BoletaCPR(BaseModel):
         if self.relacao_vertice.filter(data=data_referencia).exists() == False:
             mov = 0
             val = 0
+            qtd = 0
 
             if data_referencia == self.data_inicio:
                 mov = self.valor_presente(data_referencia) + mov
             if data_referencia == self.data_pagamento:
                 mov = -self.valor_presente(data_referencia) + mov
 
-            if data_referencia == self.data_pagamento:
-                val = 0
-            else:
+            if data_referencia != self.data_pagamento:
                 val = self.valor_presente(data_referencia)
+                qtd = self.valor_cheio
             if mov != 0 or val != 0:
                 # Necessário criar vértice apenas se algum dos valores não é zero.
                 vertice = fm.Vertice(
                     fundo=self.fundo,
                     custodia=self.encontrar_custodiante(),
-                    quantidade=1,
+                    quantidade=qtd,
                     valor=val,
                     preco=1,
                     movimentacao=mov,
                     data=data_referencia,
-                    content_object=self
+                    content_object=self,
+                    cambio=self.buscar_cambio(data_referencia)
                 )
 
                 vertice.save()
@@ -2318,12 +2319,13 @@ class BoletaCPR(BaseModel):
             vertice = fm.Vertice(
                 fundo=self.fundo,
                 custodia=self.encontrar_custodiante(),
-                quantidade=1,
+                quantidade=self.valor_cheio,
                 valor=val,
                 preco=1,
                 movimentacao=0,
                 data=data_referencia,
-                content_object=self
+                content_object=self,
+                cambio=self.buscar_cambio(data_referencia)
             )
             vertice.save()
 
@@ -2454,7 +2456,13 @@ class BoletaCPR(BaseModel):
         """
         Encontra quem é o custodiante do ativo relativo ao CPR
         """
-        if type(self.content_object) != BoletaCambio and \
+        from mercado import models as mm
+        if type(self.content_object) == mm.Provento:
+            # Encontra a boleta de provisão fruto do mesmo provento.
+            provisao = BoletaProvisao.objects.get(content_type=self.content_type, \
+                object_id=self.object_id)
+            return provisao.caixa_alvo.custodia
+        elif type(self.content_object) != BoletaCambio and \
             type(self.content_object) != BoletaPassivo and \
             self.content_object != None:
             return self.content_object.custodia

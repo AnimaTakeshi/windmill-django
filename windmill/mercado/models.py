@@ -99,7 +99,7 @@ class Provento(BaseModel):
         ('Bonificação de Ações', 'Bonificação de Ações'),
     )
 
-    ativo = models.ForeignKey('ativos.Ativo', on_delete=models.PROTECT)
+    ativo = models.ForeignKey('ativos.Acao', on_delete=models.PROTECT)
     data_declaracao = models.DateField(null=True, blank=True)
     # Data em que a posição do fundo é considerada para o cálculo do recebimento
     # dos proventos.
@@ -112,11 +112,18 @@ class Provento(BaseModel):
     tipo_provento = models.CharField(choices=TIPO, max_length=27)
     # Dependendo do tipo de provento, o valor bruto significa algo diferente:
     #     - Dividendo e JSCP: Valor bruto (sem IR) a ser pago por ação.
-    #     - Bonificação de ações e split de ações: o fator pelo qual a quantidade
+    #     - Bonificação de ações: Fator pelo qual a quantidade total de ações
+    #     será multiplicado.
+    #     Quantidade a ser recebida = (valor bruto - 1) * quantidade na data anterior à ex)
+    #     - Split de ações: o fator pelo qual a quantidade total será multiplicada
     #     de ações vai ser multiplicado.
+    #     Quantidade a ser recebida = (valor bruto - 1) * quantidade na data anterior à ex)
     #     - Direito de subscrição: fator de correção para o preço histórico
     #     das ações.
+    #
     valor_bruto = models.DecimalField(decimal_places=9, max_digits=18)
+
+    valor_liquido = models.DecimalField(decimal_places=9, max_digits=18)
     # No caso de direito de subscrição, indica quantos direitos por ação serão
     # emitidos.
     direito_por_acao = models.DecimalField(decimal_places=9, max_digits=11,

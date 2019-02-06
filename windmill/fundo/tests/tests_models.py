@@ -3033,6 +3033,13 @@ class ItatiaiaTests(TestCase):
             custodia=btg_cust,
             corretora=btg_corr,
         )
+        jeff_cash = mommy.make('ativos.caixa',
+            nome='Caixa JEFF',
+            pais=eua,
+            moeda=dolar,
+            custodia=persh_cust,
+            corretora=jeff_corr,
+        )
 
         # Fundo
         self.itatiaia = mommy.make('fundo.fundo',
@@ -3075,6 +3082,11 @@ class ItatiaiaTests(TestCase):
             bbg_ticker='NATU3 BZ EQUITY',
             pais=brasil,
             moeda=real
+        )
+        MA = mommy.make('ativos.Acao',
+            nome='MA',
+            pais=eua,
+            moeda=dolar
         )
 
         # Câmbio
@@ -3140,6 +3152,11 @@ class ItatiaiaTests(TestCase):
             data_referencia=self.data_carteira
         )
         mommy.make('mercado.Preco',
+            ativo=MA,
+            preco_fechamento=decimal.Decimal(200).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira
+        )
+        mommy.make('mercado.Preco',
             ativo=soberano,
             preco_fechamento=decimal.Decimal(39.598808).quantize(decimal.Decimal('1.000000')),
             data_referencia=self.data_carteira
@@ -3163,6 +3180,11 @@ class ItatiaiaTests(TestCase):
         mommy.make('mercado.Preco',
             ativo=NATU,
             preco_fechamento=decimal.Decimal(28.33).quantize(decimal.Decimal('1.000000')),
+            data_referencia=self.data_carteira_2
+        )
+        mommy.make('mercado.Preco',
+            ativo=MA,
+            preco_fechamento=decimal.Decimal(250).quantize(decimal.Decimal('1.000000')),
             data_referencia=self.data_carteira_2
         )
         mommy.make('mercado.Preco',
@@ -3238,6 +3260,18 @@ class ItatiaiaTests(TestCase):
             quantidade=10320689,
             preco=decimal.Decimal(28.10).quantize(decimal.Decimal('1.00')),
             caixa_alvo=self.itatiaia.caixa_padrao
+        )
+        boletaMA = mommy.make('boletagem.BoletaAcao',
+            acao=MA,
+            data_operacao=self.data_carteira,
+            data_liquidacao=self.data_carteira_3,
+            custodia=persh_cust,
+            corretora=jeff_corr,
+            operacao=bm.BoletaAcao.OPERACAO[0][0],
+            fundo=self.itatiaia,
+            quantidade=10320689,
+            preco=decimal.Decimal(200).quantize(decimal.Decimal('1.00')),
+            caixa_alvo=jeff_cash
         )
 
         # Boletas Fundos locais
@@ -3392,11 +3426,12 @@ class ItatiaiaTests(TestCase):
         )
         import mercado.models as mm
         provento_natu3 = mommy.make('mercado.Provento',
-            ativo=NATU,
+            ativo=MA,
             data_com=self.data_carteira,
             data_ex=self.data_carteira_2,
             data_pagamento=self.data_carteira_3,
-            tipo_provento=mm.Provento.TIPO[0],
+            tipo_provento=mm.Provento.TIPO[0][0],
+            valor_liquido=0.15,
         )
 
 
@@ -3404,18 +3439,24 @@ class ItatiaiaTests(TestCase):
     def test_fechamento(self):
 
         self.itatiaia.zeragem_de_caixa(self.data_carteira)
+        self.itatiaia.verificar_proventos(self.data_carteira)
         self.itatiaia.fechar_boletas_do_fundo(self.data_carteira)
         self.itatiaia.criar_vertices(self.data_carteira)
         self.itatiaia.consolidar_vertices(self.data_carteira)
         self.itatiaia.calcular_cota(self.data_carteira)
 
         self.itatiaia.zeragem_de_caixa(self.data_carteira_2)
+        self.itatiaia.verificar_proventos(self.data_carteira_2)
         self.itatiaia.fechar_boletas_do_fundo(self.data_carteira_2)
         self.itatiaia.criar_vertices(self.data_carteira_2)
         self.itatiaia.consolidar_vertices(self.data_carteira_2)
         self.itatiaia.calcular_cota(self.data_carteira_2)
 
+        import pdb
+        pdb.set_trace()
+
         self.itatiaia.zeragem_de_caixa(self.data_carteira_3)
+        self.itatiaia.verificar_proventos(self.data_carteira_3)
         self.itatiaia.fechar_boletas_do_fundo(self.data_carteira_3)
         self.itatiaia.criar_vertices(self.data_carteira_3)
         self.itatiaia.consolidar_vertices(self.data_carteira_3)

@@ -61,6 +61,10 @@ class Ativo(models.Model):
         super(Ativo, self).save(*args, **kwargs)
 
     def retorno_do_periodo(self, data_inicio, data_fim, dividendos=False):
+        """
+        dividendos indica se um ativo deve ser reajustado de acordo com os
+        dividendos distribuídos no período.
+        """
         import mercado.models as mm
         if dividendos == False:
             preco_inicio = mm.Preco.objects.get(ativo=self, \
@@ -68,7 +72,7 @@ class Ativo(models.Model):
             preco_fim = mm.Preco.objects.get(ativo=self, data_referencia=data_fim)
             return preco_fim.preco_fechamento/preco_inicio.preco_fechamento - 1
         else:
-            return 1
+            return 0
 
 class Renda_Fixa(Ativo):
     TIPO_INFO_CHOICES = (
