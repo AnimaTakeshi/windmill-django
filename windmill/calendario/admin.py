@@ -51,6 +51,11 @@ class EstadoAdmin(ImportExportModelAdmin):
     list_display = ('nome', 'pais')
 
 class CidadeResource(resources.ModelResource):
+    nome = fields.Field(
+        column_name = 'nome',
+        attribute = 'nome',
+    )
+
     estado = fields.Field(
         column_name='estado',
         attribute='estado',
@@ -66,6 +71,11 @@ class CidadeAdmin(ImportExportModelAdmin):
     resource_class = CidadeResource
 
 class CalendarioResource(resources.ModelResource):
+    nome = fields.Field(
+        column_name='nome',
+        attribute='nome',
+    )
+
     pais = fields.Field(
         column_name='pais',
         attribute='pais',
@@ -85,4 +95,4 @@ class CalendarioResource(resources.ModelResource):
 @admin.register(Calendario)
 class CalendarioAdmin(ImportExportModelAdmin):
     resource_class = CalendarioResource
-    list_display = ('id', 'pais', 'estado', 'cidade')
+    list_display = ('id', 'nome', 'pais', 'estado', 'cidade')

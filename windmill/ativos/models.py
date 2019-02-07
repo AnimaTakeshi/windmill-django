@@ -93,10 +93,13 @@ class Acao(Ativo):
     TIPO_CHOICES=(
         ("PN", "PN"),
         ("ON", "ON"),
-        ("ADR", "ADR")
+        ("ADR", "ADR"),
+        ("Unit", "Unit"),
+        ("Direito de Subscrição", "Direito de Subscrição"),
+        ("Recibo de Subscrição", "Recibo de Subscrição")
     )
 
-    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, null=True)
+    tipo = models.CharField(max_length=21, choices=TIPO_CHOICES, null=True)
 
     class Meta:
         verbose_name_plural = 'Ações'

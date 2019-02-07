@@ -47,7 +47,7 @@ class Calendario(models.Model):
     feriados federais e estaduais, e calendários de país incluem feriados
     federais apenas.
     """
-
+    nome = models.CharField(max_length=30, unique=True)
     feriados = models.ManyToManyField(Feriado)
     pais = models.ForeignKey('ativos.pais', on_delete=models.PROTECT, null=True, blank=True)
     estado = models.ForeignKey('estado', on_delete=models.PROTECT, null=True, blank=True)

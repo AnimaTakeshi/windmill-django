@@ -885,6 +885,9 @@ class Fundo(BaseModel):
         v_ativos = vertices.merge(ativos, left_on='object_id', right_on='id').drop(['object_id'], axis=1)
         v_cpr = vertices.merge(boletas, left_on='object_id', right_on='id').drop(['object_id'], axis=1)
 
+        import pdb
+        pdb.set_trace()
+
         # print('LISTA DE VÉRTICES:')
         # vertices = vertices.merge(boletas, left_on='object_id', right_on='id').drop(['id'], axis=1)
         return vertices

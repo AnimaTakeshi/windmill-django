@@ -2891,25 +2891,28 @@ class VeredaTests(TestCase):
         )
 
     def test_juntar_quantidades(self):
-        # self.veredas.zeragem_de_caixa(self.data_carteira)
-        # self.veredas.fechar_boletas_do_fundo(self.data_carteira)
-        # self.veredas.criar_vertices(self.data_carteira)
-        # self.veredas.consolidar_vertices(self.data_carteira)
-        # self.veredas.calcular_cota(self.data_carteira)
-        #
-        # self.assertTrue(fm.Carteira.objects.filter(data=self.data_carteira).exists())
-        #
-        # self.veredas.zeragem_de_caixa(self.data_carteira_1)
-        # self.veredas.fechar_boletas_do_fundo(self.data_carteira_1)
-        # self.veredas.criar_vertices(self.data_carteira_1)
-        # self.veredas.consolidar_vertices(self.data_carteira_1)
-        # self.veredas.calcular_cota(self.data_carteira_1)
-        #
-        # self.veredas.zeragem_de_caixa(self.data_carteira_2)
-        # self.veredas.fechar_boletas_do_fundo(self.data_carteira_2)
-        # self.veredas.criar_vertices(self.data_carteira_2)
-        # self.veredas.consolidar_vertices(self.data_carteira_2)
-        # self.veredas.calcular_cota(self.data_carteira_2)
+        self.veredas.zeragem_de_caixa(self.data_carteira)
+        self.veredas.verificar_proventos(self.data_carteira)
+        self.veredas.fechar_boletas_do_fundo(self.data_carteira)
+        self.veredas.criar_vertices(self.data_carteira)
+        self.veredas.consolidar_vertices(self.data_carteira)
+        self.veredas.calcular_cota(self.data_carteira)
+
+        self.assertTrue(fm.Carteira.objects.filter(data=self.data_carteira).exists())
+
+        self.veredas.zeragem_de_caixa(self.data_carteira_1)
+        self.veredas.verificar_proventos(self.data_carteira_1)
+        self.veredas.fechar_boletas_do_fundo(self.data_carteira_1)
+        self.veredas.criar_vertices(self.data_carteira_1)
+        self.veredas.consolidar_vertices(self.data_carteira_1)
+        self.veredas.calcular_cota(self.data_carteira_1)
+
+        self.veredas.zeragem_de_caixa(self.data_carteira_2)
+        self.veredas.verificar_proventos(self.data_carteira_2)
+        self.veredas.fechar_boletas_do_fundo(self.data_carteira_2)
+        self.veredas.criar_vertices(self.data_carteira_2)
+        self.veredas.consolidar_vertices(self.data_carteira_2)
+        self.veredas.calcular_cota(self.data_carteira_2)
 
 
         # self.fundo.fechar_boletas_do_fundo(self.data_carteira3)
@@ -2917,7 +2920,7 @@ class VeredaTests(TestCase):
 
         # self.assertTrue(False)
         # self.assertTrue(fm.Vertice.objects.filter(fundo=self.veredas, data=self.data_carteira).exists())
-        pass
+
 
 class ItatiaiaTests(TestCase):
     def setUp(self):
@@ -3463,27 +3466,24 @@ class ItatiaiaTests(TestCase):
 
 
     def test_fechamento(self):
-
-        self.itatiaia.zeragem_de_caixa(self.data_carteira)
-        self.itatiaia.verificar_proventos(self.data_carteira)
-        self.itatiaia.fechar_boletas_do_fundo(self.data_carteira)
-        self.itatiaia.criar_vertices(self.data_carteira)
-        self.itatiaia.consolidar_vertices(self.data_carteira)
-        self.itatiaia.calcular_cota(self.data_carteira)
-
-        self.itatiaia.zeragem_de_caixa(self.data_carteira_2)
-        self.itatiaia.verificar_proventos(self.data_carteira_2)
-        self.itatiaia.fechar_boletas_do_fundo(self.data_carteira_2)
-        self.itatiaia.criar_vertices(self.data_carteira_2)
-        self.itatiaia.consolidar_vertices(self.data_carteira_2)
-        self.itatiaia.calcular_cota(self.data_carteira_2)
-
-        import pdb
-        pdb.set_trace()
-
-        self.itatiaia.zeragem_de_caixa(self.data_carteira_3)
-        self.itatiaia.verificar_proventos(self.data_carteira_3)
-        self.itatiaia.fechar_boletas_do_fundo(self.data_carteira_3)
-        self.itatiaia.criar_vertices(self.data_carteira_3)
-        self.itatiaia.consolidar_vertices(self.data_carteira_3)
-        self.itatiaia.calcular_cota(self.data_carteira_3)
+        pass
+        # self.itatiaia.zeragem_de_caixa(self.data_carteira)
+        # self.itatiaia.verificar_proventos(self.data_carteira)
+        # self.itatiaia.fechar_boletas_do_fundo(self.data_carteira)
+        # self.itatiaia.criar_vertices(self.data_carteira)
+        # self.itatiaia.consolidar_vertices(self.data_carteira)
+        # self.itatiaia.calcular_cota(self.data_carteira)
+        #
+        # self.itatiaia.zeragem_de_caixa(self.data_carteira_2)
+        # self.itatiaia.verificar_proventos(self.data_carteira_2)
+        # self.itatiaia.fechar_boletas_do_fundo(self.data_carteira_2)
+        # self.itatiaia.criar_vertices(self.data_carteira_2)
+        # self.itatiaia.consolidar_vertices(self.data_carteira_2)
+        # self.itatiaia.calcular_cota(self.data_carteira_2)
+        #
+        # self.itatiaia.zeragem_de_caixa(self.data_carteira_3)
+        # self.itatiaia.verificar_proventos(self.data_carteira_3)
+        # self.itatiaia.fechar_boletas_do_fundo(self.data_carteira_3)
+        # self.itatiaia.criar_vertices(self.data_carteira_3)
+        # self.itatiaia.consolidar_vertices(self.data_carteira_3)
+        # self.itatiaia.calcular_cota(self.data_carteira_3)

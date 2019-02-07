@@ -1581,9 +1581,9 @@ class BoletaEmprestimo(BaseModel):
         contrário, a data de referência é a data de hoje.
         """
         if self.data_liquidacao == None:
-            return round(self.preco * self.quantidade * ((1 + self.taxa/100) ** decimal.Decimal((self.calendario.dia_trabalho_total(self.data_operacao, data_referencia)/252))-1),2)
+            return round(self.preco * self.quantidade * ((1 + self.taxa/100) ** decimal.Decimal(((self.calendario.dia_trabalho_total(self.data_operacao, data_referencia)-1)/252))-1),2)
         else:
-            return round(self.preco * self.quantidade * ((1 + self.taxa/100) ** decimal.Decimal((self.calendario.dia_trabalho_total(self.data_operacao, self.data_liquidacao)/252))-1),2)
+            return round(self.preco * self.quantidade * ((1 + self.taxa/100) ** decimal.Decimal(((self.calendario.dia_trabalho_total(self.data_operacao, self.data_liquidacao)-1)/252))-1),2)
 
     def renovar_boleta(self, quantidade, data_vencimento, data_renovacao):
         """ quantidade = int - quantidade a ser renovada.
