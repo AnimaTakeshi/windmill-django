@@ -208,7 +208,7 @@ class BoletaEmprestimoUnitTests(TestCase):
         """
         data_ref = datetime.date.today()
         financeiro = round(self.boleta.preco * self.boleta.quantidade * \
-        ((1 + self.boleta.taxa/100) ** decimal.Decimal((self.boleta.calendario.dia_trabalho_total(self.boleta.data_operacao, data_ref)/252))-1),2)
+        ((1 + self.boleta.taxa/100) ** decimal.Decimal(((self.boleta.calendario.dia_trabalho_total(self.boleta.data_operacao, data_ref)-1)/252))-1),2)
         # Deve haver uma movimentação relacionada à boleta
         self.assertEqual(financeiro, self.boleta.financeiro())
 
@@ -217,7 +217,7 @@ class BoletaEmprestimoUnitTests(TestCase):
         Testa se a conta do financeiro está correta para boletas liquidadas
         """
         financeiro = round(self.boleta_liquidada.preco * self.boleta_liquidada.quantidade * \
-        ((1 + self.boleta_liquidada.taxa/100) ** decimal.Decimal((self.boleta_liquidada.calendario.dia_trabalho_total(self.boleta_liquidada.data_operacao, self.boleta_liquidada.data_liquidacao)/252))-1),2)
+        ((1 + self.boleta_liquidada.taxa/100) ** decimal.Decimal(((self.boleta_liquidada.calendario.dia_trabalho_total(self.boleta_liquidada.data_operacao, self.boleta_liquidada.data_liquidacao)-1)/252))-1),2)
         self.assertEqual(financeiro, self.boleta_liquidada.financeiro())
 
     def test_criar_movimentacao_boleta_liquidada(self):

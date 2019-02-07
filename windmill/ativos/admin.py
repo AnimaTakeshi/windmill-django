@@ -171,6 +171,7 @@ class CaixaAdmin(ImportExportModelAdmin):
     list_display = ('id', 'nome', 'moeda', 'custodia', 'corretora')
 
 class FundoLocalResource(resources.ModelResource):
+    import fundo.models as fm
     pais = fields.Field(
         column_name='pais',
         attribute='pais',
@@ -181,12 +182,17 @@ class FundoLocalResource(resources.ModelResource):
         attribute='moeda',
         widget=ForeignKeyWidget(Moeda, 'codigo')
     )
-
+    gestao = fields.Field(
+        column_name='Fundo Gerido',
+        attribute='gestao',
+        widget=ForeignKeyWidget(fm.Fundo, 'nome')
+    )
 
     class Meta:
         model = Fundo_Local
-        fields = ('nome', 'bbg_ticker', 'pais', 'moeda', 'banco', 'agencia',\
-            'conta_corrente', 'digito')
+        fields = ('id', 'nome', 'bbg_ticker', 'pais', 'moeda', 'gestao')
+
+
 
 @admin.register(Fundo_Local)
 class FundoLocalAdmin(ImportExportModelAdmin):

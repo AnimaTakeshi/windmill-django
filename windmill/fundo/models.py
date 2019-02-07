@@ -1107,7 +1107,7 @@ class Carteira(BaseModel):
 
     class Meta:
         ordering = ['fundo']
-        verbose_name_plural = 'Carteira'
+        verbose_name_plural = 'Carteiras'
 
     def inicializar(self, df_vertices):
         """
@@ -1318,6 +1318,9 @@ class Cotista(BaseModel):
     # Se o cotista for um fundo gerido, preenche este campo
     fundo_cotista = models.ForeignKey('fundo.Fundo', on_delete=models.PROTECT,
         null=True, blank=True, unique=True)
+
+    def __str__(self):
+        return self.nome
 
 class CertificadoPassivo(BaseModel):
     """
